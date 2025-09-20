@@ -2,14 +2,6 @@
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { auth } from '../../firebaseConfig';
-import { signInWithPhoneNumber, RecaptchaVerifier } from 'firebase/auth';
-// Add this after imports
-declare global {
-    interface Window {
-      recaptchaVerifier: any;
-    }
-  }
 
 export default function OTPScreen() {
   const { phone } = useLocalSearchParams();
@@ -17,33 +9,18 @@ export default function OTPScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    // Initialize ReCaptcha for web (invisible)
-    if (typeof window !== 'undefined') {
-      window.recaptchaVerifier = new RecaptchaVerifier(
-        auth,
-        'recaptcha-container',
-        { size: 'invisible', defaultCountry: 'ZM' }
-      );
+  const handleVerify = () => {
+    if (code.length === 4) {
+      // Mock successful verification
+      console.log('OTP verified successfully');
+      router.replace('/(drawer)/dashboard'); // ✅ Use replace instead of push
+    } else {
+      Alert.alert("Invalid Code", "Please enter a 4-digit code");
     }
-  }, []);
+  };
 
-  const handleVerify = async () => {
-    if (!code.trim()) {
-      Alert.alert("Invalid", "Please enter the 4-digit code");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const confirmationResult = await signInWithPhoneNumber(auth, phone as string, window.recaptchaVerifier);
-      await confirmationResult.confirm(code);
-      router.replace('/(drawer)/dashboard');
-    } catch (error) {
-      Alert.alert("Error", "Invalid code. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+  const handleResend = () => {
+    Alert.alert("Success", "New code sent successfully!");
   };
 
   return (
@@ -65,20 +42,16 @@ export default function OTPScreen() {
       />
 
       <TouchableOpacity
-        style={[styles.button, loading && { opacity: 0.7 }]}
+        style={styles.button}
         onPress={handleVerify}
-        disabled={loading}
+        disabled={code.length !== 4}
       >
-        <Text style={styles.buttonText}>
-          {loading ? 'Verifying...' : 'Verify Code'}
-        </Text>
+        <Text style={styles.buttonText}>Verify Code</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity>
+      <TouchableOpacity onPress={handleResend}>
         <Text style={styles.resend}>Didn’t receive the code? Resend code</Text>
       </TouchableOpacity>
-
-      <View id="recaptcha-container" />
     </View>
   );
 }
@@ -96,7 +69,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: 'bold' as const,
     color: '#333',
     marginBottom: 10,
   },
@@ -125,7 +98,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '600' as const,
   },
   resend: {
     textAlign: 'center',

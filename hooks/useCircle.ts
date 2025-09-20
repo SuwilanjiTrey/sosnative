@@ -1,7 +1,6 @@
 // hooks/useCircle.ts
 import { collection, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { auth, db } from '../firebaseConfig';
 
 export type Contact = {
@@ -11,6 +10,19 @@ export type Contact = {
   phone?: string;
   invitedAt?: string;
 };
+
+function uuidv4() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older environments
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 
 export function useCircle() {
   const [contacts, setContacts] = useState<Contact[]>([]);

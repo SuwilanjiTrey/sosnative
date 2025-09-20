@@ -1,36 +1,47 @@
 // app/auth/phone.tsx
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
-import { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import Toast from 'react-native-toast-message';
 
 export default function PhoneScreen() {
   const [phone, setPhone] = useState('');
+  const [fadeAnim] = useState(new Animated.Value(0));
   const router = useRouter();
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start();
+  }, []);
 
   const handleContinue = () => {
     if (!phone.trim()) {
-      Alert.alert("Invalid", "Please enter your phone number");
+      alert("Please enter your phone number");
       return;
     }
-    // Navigate to OTP screen, pass phone via state (or context/global state)
+    // Navigate to OTP screen
     router.push({ pathname: '/auth/otp', params: { phone } });
   };
 
   return (
-    <View style={styles.container}>
+    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
       <Text style={styles.title}>SafeCircle</Text>
       <Text style={styles.subtitle}>Your Circle Management Platform</Text>
 
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Phone Number</Text>
-        <TextInput
-          placeholder="+260 965 502 028"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          style={styles.input}
-        />
+        <View style={styles.phoneInputContainer}>
+          <Text style={styles.countryCode}>+260</Text>
+          <TextInput
+            placeholder="965 502 028"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            style={styles.phoneInput}
+          />
+        </View>
       </View>
 
       <TouchableOpacity style={styles.button} onPress={handleContinue}>
@@ -40,9 +51,22 @@ export default function PhoneScreen() {
       <Text style={styles.terms}>
         By Continuing, you agree to our Terms & Conditions
       </Text>
-    </View>
+
+     
+<TouchableOpacity
+  onPress={() => router.push('/test')}
+  style={styles.testButton}
+>
+  <Text style={styles.testButtonText}>🧪 Test All Features</Text>
+</TouchableOpacity>
+
+    </Animated.View>
+
+
   );
 }
+
+
 
 const styles = StyleSheet.create({
   container: {
@@ -72,12 +96,24 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     color: '#333',
   },
-  input: {
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 8,
     padding: 15,
+  },
+  countryCode: {
     fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 10,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
   },
   button: {
     backgroundColor: '#d32f2f',
@@ -96,4 +132,20 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 12,
   },
+  // Add to styles:
+testButton: {
+  marginTop: 20,
+  padding: 15,
+  backgroundColor: '#e3f2fd',
+  borderRadius: 8,
+  alignItems: 'center',
+},
+testButtonText: {
+  color: '#2196f3',
+  fontSize: 16,
+  fontWeight: '600',
+},
 });
+
+
+

@@ -1,14 +1,16 @@
+// metro.config.js
 const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
-config.resolver.platforms = ['ios', 'android', 'native', 'web'];
-
-config.resolver.alias = {
-  'react-native-maps': Platform.select({
-    web: path.resolve(__dirname, 'path/to/web-fallback'),
-    default: 'react-native-maps',
-  }),
+// Add CORS headers for cloud workstation
+config.server = {
+  ...config.server,
+  cors: {
+    origin: true, // Allow all origins in dev
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type'],
+  },
 };
 
 module.exports = config;

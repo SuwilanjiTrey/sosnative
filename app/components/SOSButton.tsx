@@ -1,11 +1,25 @@
 // components/SOSButton.tsx
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+
 import { getCurrentLocation } from '../utils/location';
 import { addSOS } from '../utils/db';
 import { auth } from '../../firebaseConfig';
 import Toast from 'react-native-toast-message';
+
+
+function uuidv4() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older environments
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 
 export default function SOSButton({ onSOSTriggered }: { onSOSTriggered: () => void }) {
   const [counting, setCounting] = useState(false);

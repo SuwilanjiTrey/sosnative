@@ -1,117 +1,58 @@
 // app/(drawer)/live-location.tsx
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, Platform } from 'react-native';
-import MapComponent from '../components/MapComponent'; // ← No extension! Expo auto-resolves
-import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { StyledText } from '../../components/StyledText';
 
 export default function LiveLocationScreen() {
-  const [selectedCircle, setSelectedCircle] = useState('Sibling');
-  const circles = ['Sibling', 'Friends', 'Emergency Circle'];
-  
-  // Mock live location data
-  const members = [
-    {
-      id: '1',
-      name: 'Boyd Phiri',
-      phone: '+260 989 273 728',
-      relation: 'Brother',
-      location: { latitude: -15.416667, longitude: 28.283333 },
-      lastSeen: '2 min ago',
-      isLive: true
-    },
-    {
-      id: '2',
-      name: 'Beatrice Kay',
-      phone: '+260 989 273 729',
-      relation: 'Sister',
-      location: { latitude: -15.420000, longitude: 28.290000 },
-      lastSeen: '5 min ago',
-      isLive: true
-    },
-    {
-      id: '3',
-      name: 'Samuel Moyo',
-      phone: '+260 989 273 730',
-      relation: 'Friend',
-      location: { latitude: -15.410000, longitude: 28.275000 },
-      lastSeen: '10 min ago',
-      isLive: false
-    }
-  ];
-
-  const mapMarkers = members.map(member => ({
-    id: member.id,
-    coordinate: member.location,
-    title: member.name,
-    description: member.relation,
-  }));
-
-  const renderItem = ({ item }: { item: any }) => (
-    <View style={styles.memberCard}>
-      <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>{item.name}</Text>
-        <Text style={styles.memberPhone}>{item.phone}</Text>
-        <Text style={styles.memberRelation}>{item.relation}</Text>
-        <Text style={[
-          styles.lastSeen,
-          { color: item.isLive ? '#4CAF50' : '#FF9800' }
-        ]}>
-          {item.isLive ? '📍 Live now' : `🕒 Last seen ${item.lastSeen}`}
-        </Text>
-      </View>
-      <TouchableOpacity style={styles.trackButton}>
-        <Text style={styles.trackButtonText}>Track</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <View style={styles.container}>
-      <StyledText type="title" style={{ marginBottom: 20 }}>Live Location</StyledText>
-      <Text style={styles.subtitle}>Select your circle to view where they are.</Text>
+      {/* Header */}
+      <StyledText type="title" style={styles.title}>
+        Live Location
+      </StyledText>
+      <Text style={styles.subtitle}>
+        Select your circle to view where they are.
+      </Text>
 
-      {/* Circle Selector */}
-      <View style={styles.circleSelector}>
-        {circles.map(circle => (
-          <TouchableOpacity
-            key={circle}
-            style={[
-              styles.circleButton,
-              selectedCircle === circle && styles.circleButtonActive
-            ]}
-            onPress={() => setSelectedCircle(circle)}
-          >
-            <Text style={[
-              styles.circleButtonText,
-              selectedCircle === circle && styles.circleButtonTextActive
-            ]}>
-              {circle}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Coming Soon Card */}
+      <View style={styles.comingSoonCard}>
+        <Text style={styles.comingSoonTitle}>📍 Live Map Feature</Text>
+        <Text style={styles.comingSoonText}>
+          Real-time location tracking is coming soon!
+        </Text>
+        <Text style={styles.comingSoonText}>
+          We're working hard to bring you the best safety experience.
+        </Text>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>COMING SOON</Text>
+        </View>
       </View>
 
-      {/* PLATFORM-AUTOMATIC MAP */}
-      <View style={styles.mapContainer}>
-        <MapComponent
-          initialRegion={{
-            latitude: -15.416667,
-            longitude: 28.283333,
-            latitudeDelta: 0.0922,
-            longitudeDelta: 0.0421,
-          }}
-          markers={mapMarkers}
-        />
+      {/* Circle Quick View (from mockup) */}
+      <View style={styles.circlesSection}>
+        <Text style={styles.sectionTitle}>Your Circles</Text>
+        <View style={styles.circlesRow}>
+          <View style={styles.circleCard}>
+            <Text style={styles.circleName}>Sibling</Text>
+            <Text style={styles.circleMembers}>3 Members</Text>
+          </View>
+          <View style={styles.circleCard}>
+            <Text style={styles.circleName}>Friends</Text>
+            <Text style={styles.circleMembers}>8 Members</Text>
+          </View>
+          <View style={styles.circleCardAdd}>
+            <Text style={styles.addText}>+3</Text>
+          </View>
+        </View>
       </View>
 
-      {/* Member List */}
-      <FlatList
-        data={members}
-        renderItem={renderItem}
-        keyExtractor={item => item.id}
-        style={styles.memberList}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
+      {/* SOS Button (from mockup) */}
+      <TouchableOpacity style={styles.sosButton}>
+        <Text style={styles.sosButtonText}>SOS</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.recordButton}>
+        <Text style={styles.recordButtonText}>Record</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -122,85 +63,131 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#fff',
   },
+  title: {
+    marginBottom: 20,
+    textAlign: 'center',
+  },
   subtitle: {
     color: '#666',
-    marginBottom: 20,
     fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 30,
   },
-  circleSelector: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    padding: 5,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-  },
-  circleButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginHorizontal: 4,
-  },
-  circleButtonActive: {
-    backgroundColor: '#d32f2f',
-  },
-  circleButtonText: {
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  circleButtonTextActive: {
-    color: '#fff',
-  },
-  mapContainer: {
-    height: 200,
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 20,
-  },
-  memberList: {
-    flex: 1,
-  },
-  memberCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  comingSoonCard: {
+    backgroundColor: '#ffebee',
+    borderRadius: 12,
+    padding: 30,
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    marginBottom: 10,
+    marginBottom: 40,
+    borderWidth: 1,
+    borderColor: '#ffcdd2',
   },
-  memberInfo: {
-    flex: 1,
+  comingSoonTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#d32f2f',
+    marginBottom: 15,
+    textAlign: 'center',
   },
-  memberName: {
+  comingSoonText: {
     fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 22,
+  },
+  badge: {
+    backgroundColor: '#d32f2f',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 20,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  circlesSection: {
+    marginBottom: 40,
+  },
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  memberPhone: {
-    color: '#d32f2f',
+  circlesRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 15,
+  },
+  circleCard: {
+    width: 100,
+    height: 100,
+    backgroundColor: '#f8f8f8',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
+  },
+  circleCardAdd: {
+    width: 100,
+    height: 100,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: '#2196f3',
+  },
+  circleName: {
     fontSize: 14,
-    marginBottom: 2,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 5,
+    color: '#333',
   },
-  memberRelation: {
+  circleMembers: {
+    fontSize: 12,
     color: '#666',
-    fontSize: 12,
-    marginBottom: 2,
+    textAlign: 'center',
   },
-  lastSeen: {
-    fontSize: 12,
-    fontWeight: '500',
+  addText: {
+    fontSize: 20,
+    color: '#2196f3',
+    fontWeight: 'bold',
   },
-  trackButton: {
-    backgroundColor: '#2196f3',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+  sosButton: {
+    backgroundColor: '#d32f2f',
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginVertical: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  trackButtonText: {
+  sosButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  recordButton: {
+    backgroundColor: '#2196f3',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  recordButtonText: {
+    color: '#fff',
+    fontSize: 18,
     fontWeight: '600',
   },
 });
