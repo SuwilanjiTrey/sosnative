@@ -1,14 +1,14 @@
-/**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
- */
+// hooks/useThemeColor.ts
+import { useColorScheme } from 'react-native';
 
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+export type ThemeProps = {
+  light?: string;
+  dark?: string;
+};
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
-  colorName: keyof typeof Colors.light & keyof typeof Colors.dark
+  colorName: 'text' | 'background' | 'tint' | 'tabIconDefault' | 'tabIconSelected'
 ) {
   const theme = useColorScheme() ?? 'light';
   const colorFromProps = props[theme];
@@ -16,6 +16,20 @@ export function useThemeColor(
   if (colorFromProps) {
     return colorFromProps;
   } else {
-    return Colors[theme][colorName];
+    // Fallbacks for SafeCircle
+    switch (colorName) {
+      case 'text':
+        return theme === 'dark' ? '#fff' : '#000';
+      case 'background':
+        return theme === 'dark' ? '#000' : '#fff';
+      case 'tint':
+        return '#d32f2f'; // SafeCircle Red
+      case 'tabIconDefault':
+        return theme === 'dark' ? '#ccc' : '#888';
+      case 'tabIconSelected':
+        return '#d32f2f';
+      default:
+        return '#000';
+    }
   }
 }
