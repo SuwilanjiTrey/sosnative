@@ -1,30 +1,20 @@
 // components/PermissionModal.tsx
-import { View, Text, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet, Image } from 'react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
 
 export default function PermissionModal({ visible, onGranted }: { visible: boolean; onGranted: () => void }) {
   const requestPermissions = async () => {
     // Location
     const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
     if (fgStatus !== 'granted') {
-      Alert.alert("Location needed", "App needs location to send SOS with your position.");
-      return;
-    }
-
-    // Optional: Background location (Android only for MVP)
-    if (Platform.OS === 'android') {
-      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-      if (bgStatus !== 'granted') {
-        Alert.alert("Background location helpful", "For better accuracy during emergencies.");
-      }
+      alert('Location needed for SOS alerts');
     }
 
     // Notifications
     const { status: notifStatus } = await Notifications.requestPermissionsAsync();
     if (notifStatus !== 'granted') {
-      Alert.alert("Notifications needed", "To receive acknowledgements from your Circle.");
+      alert('Notifications needed for acknowledgements');
     }
 
     onGranted();
@@ -34,18 +24,22 @@ export default function PermissionModal({ visible, onGranted }: { visible: boole
 
   return (
     <Modal transparent animationType="slide" visible={visible}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-        <View style={{ backgroundColor: 'white', padding: 20, borderRadius: 10, width: '90%' }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Permissions Required</Text>
-          <Text>We need access to:</Text>
-          <Text>📍 Location — to attach to your SOS</Text>
-          <Text>🔔 Notifications — to receive acknowledgements</Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 }}>
-            <TouchableOpacity onPress={onGranted} style={{ padding: 10, backgroundColor: '#ccc', borderRadius: 5, flex: 1, marginRight: 5, alignItems: 'center' }}>
-              <Text>Skip for Now</Text>
+      <View style={styles.overlay}>
+        <View style={styles.modal}>
+          <Image
+            source={require('../../assets/images/react-logo.png')} // 👈 Optional: add permission icon
+            style={styles.permissionIcon}
+          />
+          <Text style={styles.title}>Permissions Required</Text>
+          <Text style={styles.message}>
+            Allow SafeCircle to access your location and send notifications for emergency alerts.
+          </Text>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity onPress={onGranted} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>Skip</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={requestPermissions} style={{ padding: 10, backgroundColor: 'green', borderRadius: 5, flex: 1, marginLeft: 5, alignItems: 'center' }}>
-              <Text style={{ color: 'white' }}>Allow All</Text>
+            <TouchableOpacity onPress={requestPermissions} style={styles.primaryButton}>
+              <Text style={styles.primaryButtonText}>Allow</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -53,3 +47,70 @@ export default function PermissionModal({ visible, onGranted }: { visible: boole
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modal: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 16,
+    width: '90%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  permissionIcon: {
+    width: 60,
+    height: 60,
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 22,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 15,
+    width: '100%',
+  },
+  primaryButton: {
+    flex: 1,
+    padding: 15,
+    backgroundColor: '#d32f2f',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    flex: 1,
+    padding: 15,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  secondaryButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});

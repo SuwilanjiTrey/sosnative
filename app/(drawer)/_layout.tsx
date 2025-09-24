@@ -20,7 +20,7 @@ export default function DrawerLayout() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      router.replace('/auth/phone');
+      router.replace('/auth/login');
     } catch (error) {
       console.error("Sign out error:", error);
     }

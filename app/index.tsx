@@ -37,7 +37,7 @@ export default function Index() {
 
   // If not authenticated, redirect to phone auth
   if (!isAuthenticated) {
-    return <Redirect href="/auth/phone" />;
+    return <Redirect href="/auth/login" />;
   }
 
   // If authenticated, redirect to dashboard

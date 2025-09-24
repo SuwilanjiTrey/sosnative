@@ -1,19 +1,17 @@
 // app/auth/register.tsx
-import { View, Text, TextInput, Button, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { auth, db } from '../../firebaseConfig';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { requestForegroundPermissionsAsync, requestBackgroundPermissionsAsync } from 'expo-location';
-import * as Notifications from 'expo-notifications';
-import PermissionModal from '../components/PermissionModal';
+import { StyledText } from '../../components/StyledText';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleRegister = async () => {
@@ -22,45 +20,209 @@ export default function RegisterScreen() {
       return;
     }
 
+    if (password.length < 6) {
+      Alert.alert("Weak Password", "Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+
     try {
+      // Create auth user
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
+      // Create user document in Firestore
       await setDoc(doc(db, "users", user.uid), {
         name,
         email,
         createdAt: new Date(),
         lastActiveAt: new Date(),
-        settings: { emailFallback: true, smsFallback: false },
+        settings: { 
+          emailFallback: true, 
+          smsFallback: false,
+          location: true,
+          camera: false,
+          audio: false,
+          photo: false
+        },
         fcmTokens: {}
       });
 
-      setShowPermissionModal(true); // Show permission modal after successful register
+      // Show success message
+      Alert.alert(
+        "Success!",
+        "Your account has been created successfully!",
+        [
+          {
+            text: "Continue",
+            onPress: () => router.replace('/(drawer)/dashboard'),
+            style: "default"
+          }
+        ]
+      );
     } catch (error: any) {
-      Alert.alert("Registration Failed", error.message);
+      console.error("Registration error:", error);
+      
+      let errorMessage = "Failed to create account. Please try again.";
+      
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email is already registered. Please login instead.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Please enter a valid email address.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak. Please use at least 6 characters.";
+      }
+
+      Alert.alert("Registration Failed", errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handlePermissionsGranted = () => {
-    setShowPermissionModal(false);
-    router.replace('/(drawer)/dashboard');
-  };
-
   return (
-    <View style={{ padding: 20, flex: 1, justifyContent: 'center' }}>
-      <Text style={{ fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 }}>Create Account</Text>
-      <TextInput placeholder="Full Name" value={name} onChangeText={setName} style={{ borderWidth: 1, marginVertical: 8, padding: 8 }} />
-      <TextInput placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" style={{ borderWidth: 1, marginVertical: 8, padding: 8 }} />
-      <TextInput placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry style={{ borderWidth: 1, marginVertical: 8, padding: 8 }} />
-      <Button title="Register" onPress={handleRegister} />
-      <TouchableOpacity onPress={() => router.push('/auth/login')} style={{ marginTop: 16, alignItems: 'center' }}>
-        <Text style={{ color: 'blue' }}>Already have an account? Login</Text>
+    <View style={styles.container}>
+      {/* App Logo */}
+      <Image
+        source={require('../../assets/images/icon.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
+
+      <StyledText type="title" style={styles.title}>
+        Create Account
+      </StyledText>
+
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>Full Name</Text>
+        <TextInput
+          placeholder="Enter your full name"
+          value={name}
+          onChangeText={setName}
+          style={styles.input}
+          editable={!loading}
+        />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          placeholder="Enter your email"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          style={styles.input}
+          editable={!loading}
+        />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>Password</Text>
+        <TextInput
+          placeholder="Create a password (min 6 chars)"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          style={styles.input}
+          editable={!loading}
+        />
+      </View>
+
+      <TouchableOpacity 
+        style={[styles.button, loading && styles.buttonDisabled]} 
+        onPress={handleRegister}
+        disabled={loading}
+      >
+        <Text style={styles.buttonText}>
+          {loading ? 'Creating Account...' : 'Register'}
+        </Text>
       </TouchableOpacity>
 
-      <PermissionModal
-        visible={showPermissionModal}
-        onGranted={handlePermissionsGranted}
-      />
+      <TouchableOpacity 
+        onPress={() => router.push('/auth/login')} 
+        style={styles.loginLink}
+        disabled={loading}
+      >
+        <Text style={styles.loginText}>Already have an account? Login</Text>
+      </TouchableOpacity>
+
+      {/* Development Note */}
+      <Text style={styles.devNote}>
+        Note: You may see CORS errors in console - this is normal in development environment. 
+        Your account is being created successfully in Firebase.
+      </Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    alignSelf: 'center',
+    marginBottom: 30,
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: 30,
+    color: '#d32f2f',
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#333',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+  },
+  button: {
+    backgroundColor: '#d32f2f',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  loginLink: {
+    marginTop: 25,
+    alignItems: 'center',
+  },
+  loginText: {
+    color: '#2196f3',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  devNote: {
+    marginTop: 30,
+    fontSize: 12,
+    color: '#888',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+});

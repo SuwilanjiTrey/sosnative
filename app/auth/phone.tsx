@@ -1,33 +1,33 @@
 // app/auth/phone.tsx
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
+import { StyledText } from '../../components/StyledText';
 
 export default function PhoneScreen() {
   const [phone, setPhone] = useState('');
-  const [fadeAnim] = useState(new Animated.Value(0));
   const router = useRouter();
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
-  }, []);
 
   const handleContinue = () => {
     if (!phone.trim()) {
-      alert("Please enter your phone number");
+      Alert.alert("Invalid", "Please enter your phone number");
       return;
     }
-    // Navigate to OTP screen
     router.push({ pathname: '/auth/otp', params: { phone } });
   };
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      <Text style={styles.title}>SafeCircle</Text>
+    <View style={styles.container}>
+      {/* App Logo */}
+      <Image
+        source={require('../../assets/images/icon.png')} // 👈 Update path to your icon
+        style={styles.logo}
+        resizeMode="contain"
+      />
+
+      <StyledText type="title" style={styles.title}>
+        SafeCircle
+      </StyledText>
       <Text style={styles.subtitle}>Your Circle Management Platform</Text>
 
       <View style={styles.inputContainer}>
@@ -48,25 +48,16 @@ export default function PhoneScreen() {
         <Text style={styles.buttonText}>Continue</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity onPress={() => router.push('/test')} style={styles.testButton}>
+        <Text style={styles.testButtonText}>🧪 Test All Features</Text>
+      </TouchableOpacity>
+
       <Text style={styles.terms}>
         By Continuing, you agree to our Terms & Conditions
       </Text>
-
-     
-<TouchableOpacity
-  onPress={() => router.push('/test')}
-  style={styles.testButton}
->
-  <Text style={styles.testButtonText}>🧪 Test All Features</Text>
-</TouchableOpacity>
-
-    </Animated.View>
-
-
+    </View>
   );
 }
-
-
 
 const styles = StyleSheet.create({
   container: {
@@ -75,17 +66,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
+  logo: {
+    width: 80,
+    height: 80,
+    alignSelf: 'center',
+    marginBottom: 30,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
     textAlign: 'center',
-    color: '#d32f2f',
     marginBottom: 10,
+    color: '#d32f2f',
   },
   subtitle: {
     textAlign: 'center',
     color: '#666',
     marginBottom: 40,
+    fontSize: 16,
   },
   inputContainer: {
     marginBottom: 30,
@@ -101,51 +97,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 15,
   },
   countryCode: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: '#333',
-    marginRight: 10,
+    marginRight: 15,
+    minWidth: 60,
   },
   phoneInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 18,
     padding: 0,
   },
   button: {
     backgroundColor: '#d32f2f',
-    padding: 16,
-    borderRadius: 8,
+    padding: 18,
+    borderRadius: 12,
     alignItems: 'center',
     marginBottom: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   buttonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
   },
+  testButton: {
+    padding: 15,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  testButtonText: {
+    color: '#2196f3',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   terms: {
     textAlign: 'center',
     color: '#888',
     fontSize: 12,
+    marginTop: 20,
   },
-  // Add to styles:
-testButton: {
-  marginTop: 20,
-  padding: 15,
-  backgroundColor: '#e3f2fd',
-  borderRadius: 8,
-  alignItems: 'center',
-},
-testButtonText: {
-  color: '#2196f3',
-  fontSize: 16,
-  fontWeight: '600',
-},
 });
-
-
-
