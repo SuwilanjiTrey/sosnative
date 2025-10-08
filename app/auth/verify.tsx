@@ -18,7 +18,7 @@ export default function VerifyScreen() {
 
   const checkVerified = () => {
     if (auth.currentUser?.emailVerified) {
-      router.replace('/(drawer)/dashboard');
+      router.replace('/(tabs)/dashboard');
     } else {
       Alert.alert("Not Verified", "Please verify your email first.");
     }

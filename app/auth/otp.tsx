@@ -13,7 +13,7 @@ export default function OTPScreen() {
     if (code.length === 4) {
       // Mock successful verification
       console.log('OTP verified successfully');
-      router.replace('/(drawer)/dashboard'); // ✅ Use replace instead of push
+      router.replace('/(tabs)/dashboard'); // ✅ Use replace instead of push
     } else {
       Alert.alert("Invalid Code", "Please enter a 4-digit code");
     }

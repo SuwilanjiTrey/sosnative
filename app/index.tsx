@@ -41,7 +41,7 @@ export default function Index() {
   }
 
   // If authenticated, redirect to dashboard
-  return <Redirect href="/(drawer)/dashboard" />;
+  return <Redirect href="/(tabs)/dashboard" />;
 }
 
 const styles = StyleSheet.create({

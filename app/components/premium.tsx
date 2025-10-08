@@ -1,5 +1,5 @@
 // app/(drawer)/premium.tsx
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
 import { StyledText } from '../../components/StyledText';
 
 export default function PremiumScreen() {
@@ -41,7 +41,11 @@ export default function PremiumScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView 
+      style={styles.scrollContainer}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={true}
+    >
       <StyledText type="title" style={{ marginBottom: 10 }}>Premium Subscription</StyledText>
       <Text style={styles.subtitle}>Become a member for extra security</Text>
 
@@ -106,15 +110,18 @@ export default function PremiumScreen() {
       <Text style={styles.terms}>
         * Prices in Zambian Kwacha (ZMW). Auto-renews until canceled.
       </Text>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scrollContainer: {
     flex: 1,
-    padding: 20,
     backgroundColor: '#fff',
+  },
+  contentContainer: {
+    padding: 20,
+    paddingBottom: 40, // Extra padding at the bottom for better scrolling experience
   },
   subtitle: {
     color: '#666',

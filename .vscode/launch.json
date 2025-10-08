@@ -5,6 +5,28 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Run Android - Experimental",
+            "request": "launch",
+            "type": "reactnative",
+            "cwd": "${workspaceFolder}",
+            "enableDebug": false,
+            "platform": "android"
+        },
+        {
+            "name": "Attach to Hermes application",
+            "request": "attach",
+            "type": "reactnativedirect",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Run Android Hermes",
+            "request": "launch",
+            "type": "reactnativedirect",
+            "cwd": "${workspaceFolder}",
+            "enableDebug": false,
+            "platform": "android"
+        },
+        {
             "name": "Run Android Hermes",
             "request": "launch",
             "type": "reactnativedirect",

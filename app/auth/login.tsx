@@ -29,7 +29,7 @@ export default function LoginScreen() {
         [
           {
             text: "Continue",
-            onPress: () => router.replace('/(drawer)/dashboard'),
+            onPress: () => router.replace('/(tabs)/dashboard'),
             style: "default"
           }
         ]

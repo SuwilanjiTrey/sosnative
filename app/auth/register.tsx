@@ -56,7 +56,7 @@ export default function RegisterScreen() {
         [
           {
             text: "Continue",
-            onPress: () => router.replace('/(drawer)/dashboard'),
+            onPress: () => router.replace('/(tabs)/dashboard'),
             style: "default"
           }
         ]
