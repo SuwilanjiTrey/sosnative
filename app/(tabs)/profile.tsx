@@ -1,12 +1,57 @@
+import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfile } from '../contexts/ProfileContext';
+import { db } from '../../firebaseConfig'
+import { doc, getDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import { auth } from '../../firebaseConfig';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const { profilePicture } = useProfile();
+
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      router.replace('/auth/login');
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!user) return;
+      
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUserData(userDoc.data());
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, [user]);
+
+  const getImageSource = () => {
+    if (userData?.profilePictureBase64) {
+      return { uri: userData.profilePictureBase64 };
+    }
+    return { uri: user?.photoURL || 'https://i.pravatar.cc/150?img=10' };
+  };
 
   const menuItems = [
     { id: 1, title: 'Settings', icon: 'settings-outline', route: '../components/settings' },
@@ -23,17 +68,21 @@ export default function ProfileScreen() {
       <View style={styles.profileHeader}>
         <View style={styles.profileImageContainer}>
           <Image 
-            source={{ uri: profilePicture }}
+            source={getImageSource()}
             style={styles.profileImage}
           />
         </View>
         
         <View style={styles.profileInfo}>
-          <Text style={styles.userName}>Jabulani Kabwe</Text>
+          <Text style={styles.userName}> {userData?.name || user?.displayName || 'User'} </Text>
           <Text style={styles.joinDate}>Joined on 2023</Text>
           <View style={styles.accountBadge}>
             <Ionicons name="shield-checkmark" size={16} color="#007AFF" />
-            <Text style={styles.accountType}>Premium Account</Text>
+            <Text style={styles.accountType}>
+              
+            {userData?.isPremium ? 'Premium user' : 'Basic Plan'}
+              
+              </Text>
           </View>
         </View>
 
@@ -82,6 +131,15 @@ export default function ProfileScreen() {
           <View style={styles.subscriptionImage}>
             <Ionicons name="shield-checkmark" size={60} color="#FFB800" />
           </View>
+          
+        </View>
+        <View style={styles.logoutButton}>
+        <TouchableOpacity 
+              style={styles.subscribeButton}
+              onPress={ () => handleSignOut()}
+            >
+              <Text style={styles.logoutText}>Logout</Text>
+            </TouchableOpacity>
         </View>
       </View>
     </ScrollView>
@@ -91,13 +149,14 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: 20,
     backgroundColor: '#fff',
   },
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
-    paddingTop: 10,
+    paddingTop: 30,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -167,6 +226,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     fontWeight: '500',
+  },
+  logoutButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: '#d32f2f',
+    fontWeight: '600',
+    fontSize: 16,
   },
   subscriptionContainer: {
     padding: 20,

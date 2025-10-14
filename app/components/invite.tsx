@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 
-export function InviteScreen() {
+export default function InviteScreen() {
     const router = useRouter();
   
     return (

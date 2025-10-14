@@ -20,7 +20,7 @@ export default function PhoneScreen() {
     <View style={styles.container}>
       {/* App Logo */}
       <Image
-        source={require('../../assets/images/icon.png')} // 👈 Update path to your icon
+        source={require('../../assets/images/icon.png')}
         style={styles.logo}
         resizeMode="contain"
       />
@@ -48,9 +48,6 @@ export default function PhoneScreen() {
         <Text style={styles.buttonText}>Continue</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push('/test')} style={styles.testButton}>
-        <Text style={styles.testButtonText}>🧪 Test All Features</Text>
-      </TouchableOpacity>
 
       <Text style={styles.terms}>
         By Continuing, you agree to our Terms & Conditions

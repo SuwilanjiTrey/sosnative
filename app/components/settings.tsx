@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, Switch, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Switch, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { Camera } from 'expo-camera';
+import { Audio } from 'expo-av';
+import * as MediaLibrary from 'expo-media-library';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const SETTINGS_KEY = '@app_settings';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -9,6 +16,209 @@ export default function SettingsScreen() {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [photoEnabled, setPhotoEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadPermissionStates();
+  }, []);
+
+  const loadPermissionStates = async () => {
+    try {
+      // Check actual permission statuses
+      const [locationStatus, cameraStatus, audioStatus, photoStatus] = await Promise.all([
+        Location.getForegroundPermissionsAsync(),
+        Camera.getCameraPermissionsAsync(),
+        Audio.getPermissionsAsync(),
+        MediaLibrary.getPermissionsAsync(),
+      ]);
+
+      setLocationEnabled(locationStatus.status === 'granted');
+      setCameraEnabled(cameraStatus.status === 'granted');
+      setAudioEnabled(audioStatus.status === 'granted');
+      setPhotoEnabled(photoStatus.status === 'granted');
+
+      // Save current states
+      await saveSettings({
+        location: locationStatus.status === 'granted',
+        camera: cameraStatus.status === 'granted',
+        audio: audioStatus.status === 'granted',
+        photo: photoStatus.status === 'granted',
+      });
+    } catch (error) {
+      console.error('Error loading permissions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSettings = async (settings: any) => {
+    try {
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    }
+  };
+
+  const openAppSettings = () => {
+    Alert.alert(
+      'Permission Required',
+      'Please enable the permission in your device settings',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Open Settings', 
+          onPress: () => {
+            if (Platform.OS === 'ios') {
+              Linking.openURL('app-settings:');
+            } else {
+              Linking.openSettings();
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleLocationToggle = async (value: boolean) => {
+    if (value) {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setLocationEnabled(true);
+        await saveSettings({
+          location: true,
+          camera: cameraEnabled,
+          audio: audioEnabled,
+          photo: photoEnabled,
+        });
+      } else {
+        setLocationEnabled(false);
+        openAppSettings();
+      }
+    } else {
+      setLocationEnabled(false);
+      Alert.alert(
+        'Disable Location',
+        'To disable location access, please go to your device settings',
+        [{ text: 'OK' }]
+      );
+      await saveSettings({
+        location: false,
+        camera: cameraEnabled,
+        audio: audioEnabled,
+        photo: photoEnabled,
+      });
+    }
+  };
+
+  const handleCameraToggle = async (value: boolean) => {
+    if (value) {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      if (status === 'granted') {
+        setCameraEnabled(true);
+        await saveSettings({
+          location: locationEnabled,
+          camera: true,
+          audio: audioEnabled,
+          photo: photoEnabled,
+        });
+      } else {
+        setCameraEnabled(false);
+        openAppSettings();
+      }
+    } else {
+      setCameraEnabled(false);
+      Alert.alert(
+        'Disable Camera',
+        'To disable camera access, please go to your device settings',
+        [{ text: 'OK' }]
+      );
+      await saveSettings({
+        location: locationEnabled,
+        camera: false,
+        audio: audioEnabled,
+        photo: photoEnabled,
+      });
+    }
+  };
+
+  const handleAudioToggle = async (value: boolean) => {
+    if (value) {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status === 'granted') {
+        setAudioEnabled(true);
+        await saveSettings({
+          location: locationEnabled,
+          camera: cameraEnabled,
+          audio: true,
+          photo: photoEnabled,
+        });
+      } else {
+        setAudioEnabled(false);
+        openAppSettings();
+      }
+    } else {
+      setAudioEnabled(false);
+      Alert.alert(
+        'Disable Audio',
+        'To disable microphone access, please go to your device settings',
+        [{ text: 'OK' }]
+      );
+      await saveSettings({
+        location: locationEnabled,
+        camera: cameraEnabled,
+        audio: false,
+        photo: photoEnabled,
+      });
+    }
+  };
+
+  const handlePhotoToggle = async (value: boolean) => {
+    if (value) {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status === 'granted') {
+        setPhotoEnabled(true);
+        await saveSettings({
+          location: locationEnabled,
+          camera: cameraEnabled,
+          audio: audioEnabled,
+          photo: true,
+        });
+      } else {
+        setPhotoEnabled(false);
+        openAppSettings();
+      }
+    } else {
+      setPhotoEnabled(false);
+      Alert.alert(
+        'Disable Photo Library',
+        'To disable photo library access, please go to your device settings',
+        [{ text: 'OK' }]
+      );
+      await saveSettings({
+        location: locationEnabled,
+        camera: cameraEnabled,
+        audio: audioEnabled,
+        photo: false,
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={28} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Settings</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading permissions...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -32,7 +242,7 @@ export default function SettingsScreen() {
           </View>
           <Switch
             value={locationEnabled}
-            onValueChange={setLocationEnabled}
+            onValueChange={handleLocationToggle}
             trackColor={{ false: '#E0E0E0', true: '#81C784' }}
             thumbColor={locationEnabled ? '#4CAF50' : '#f4f3f4'}
             ios_backgroundColor="#E0E0E0"
@@ -49,7 +259,7 @@ export default function SettingsScreen() {
           </View>
           <Switch
             value={cameraEnabled}
-            onValueChange={setCameraEnabled}
+            onValueChange={handleCameraToggle}
             trackColor={{ false: '#E0E0E0', true: '#81C784' }}
             thumbColor={cameraEnabled ? '#4CAF50' : '#f4f3f4'}
             ios_backgroundColor="#E0E0E0"
@@ -66,7 +276,7 @@ export default function SettingsScreen() {
           </View>
           <Switch
             value={audioEnabled}
-            onValueChange={setAudioEnabled}
+            onValueChange={handleAudioToggle}
             trackColor={{ false: '#E0E0E0', true: '#81C784' }}
             thumbColor={audioEnabled ? '#4CAF50' : '#f4f3f4'}
             ios_backgroundColor="#E0E0E0"
@@ -76,18 +286,26 @@ export default function SettingsScreen() {
         {/* Photo */}
         <View style={styles.settingItem}>
           <View style={styles.settingTextContainer}>
-            <Text style={styles.settingTitle}>Photo</Text>
+            <Text style={styles.settingTitle}>Photo Library</Text>
             <Text style={styles.settingDescription}>
-              Enable photo access so that the app can use photo while in panic mode
+              Enable photo library access so that the app can save media while in panic mode
             </Text>
           </View>
           <Switch
             value={photoEnabled}
-            onValueChange={setPhotoEnabled}
+            onValueChange={handlePhotoToggle}
             trackColor={{ false: '#E0E0E0', true: '#81C784' }}
             thumbColor={photoEnabled ? '#4CAF50' : '#f4f3f4'}
             ios_backgroundColor="#E0E0E0"
           />
+        </View>
+
+        {/* Info Section */}
+        <View style={styles.infoSection}>
+          <Ionicons name="information-circle-outline" size={20} color="#666" />
+          <Text style={styles.infoText}>
+            Permissions can also be managed in your device's system settings
+          </Text>
         </View>
       </ScrollView>
     </View>
@@ -119,6 +337,15 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 36,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
   content: {
     flex: 1,
     paddingHorizontal: 20,
@@ -145,6 +372,22 @@ const styles = StyleSheet.create({
   settingDescription: {
     fontSize: 14,
     color: '#666',
+    lineHeight: 20,
+  },
+  infoSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 20,
+    marginBottom: 30,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 10,
     lineHeight: 20,
   },
 });

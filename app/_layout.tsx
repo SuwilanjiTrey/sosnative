@@ -18,13 +18,14 @@ export default function RootLayout() {
         <Stack.Screen name="components/notification" options={{ headerShown: false }} />
         <Stack.Screen name="components/privacy" options={{ headerShown: false }} />
         <Stack.Screen name="components/invite" options={{ headerShown: false }} />
+        <Stack.Screen name="components/change-picture" options={{ headerShown: false }} />
         
         {/* Location screen */}
         <Stack.Screen name="components/live-location" options={{ headerShown: false }} />
         
         {/* Recording screen */}
         <Stack.Screen 
-          name="record" 
+          name="(tabs)/record" 
           options={{ 
             headerShown: false,
             presentation: 'fullScreenModal' 

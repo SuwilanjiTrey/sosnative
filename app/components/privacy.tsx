@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 
-export function PrivacyScreen() {
+export default function PrivacyScreen() {
     const router = useRouter();
   
     return (

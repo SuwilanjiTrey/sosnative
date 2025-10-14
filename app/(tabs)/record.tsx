@@ -4,17 +4,21 @@ import { Camera, CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
+import { Audio } from 'expo-av';
 
 export default function RecordScreen() {
   const router = useRouter();
-  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [audioPermission, setAudioPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
   const cameraRef = useRef<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const maxRecordingTime = 60; // 60 seconds = 1 minute
+  const maxRecordingTime = 60;
 
   useEffect(() => {
+    checkAudioPermission();
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -22,7 +26,18 @@ export default function RecordScreen() {
     };
   }, []);
 
-  if (!permission) {
+  const checkAudioPermission = async () => {
+    const { status } = await Audio.getPermissionsAsync();
+    setAudioPermission(status === 'granted');
+  };
+
+  const requestAudioPermission = async () => {
+    const { status } = await Audio.requestPermissionsAsync();
+    setAudioPermission(status === 'granted');
+    return status === 'granted';
+  };
+
+  if (!cameraPermission) {
     return (
       <View style={styles.container}>
         <Text style={styles.loadingText}>Loading camera...</Text>
@@ -30,7 +45,7 @@ export default function RecordScreen() {
     );
   }
 
-  if (!permission.granted) {
+  if (!cameraPermission.granted) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.permissionContainer}>
@@ -39,8 +54,8 @@ export default function RecordScreen() {
           <Text style={styles.permissionSubtext}>
             We need camera permission to record video
           </Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-            <Text style={styles.permissionButtonText}>Grant Permission</Text>
+          <TouchableOpacity style={styles.permissionButton} onPress={requestCameraPermission}>
+            <Text style={styles.permissionButtonText}>Grant Camera Permission</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Go Back</Text>
@@ -53,6 +68,18 @@ export default function RecordScreen() {
   const startRecording = async () => {
     if (cameraRef.current && !isRecording) {
       try {
+        // Check audio permission before recording
+        if (!audioPermission) {
+          const granted = await requestAudioPermission();
+          if (!granted) {
+            Alert.alert(
+              'Audio Permission Required',
+              'Please enable microphone access to record video with audio'
+            );
+            return;
+          }
+        }
+
         setIsRecording(true);
         setRecordingTime(0);
 
@@ -71,11 +98,12 @@ export default function RecordScreen() {
           maxDuration: maxRecordingTime,
         });
 
-        // Save video to internal storage
-        await saveVideo(video.uri);
+        if (video && video.uri) {
+          await saveVideo(video.uri);
+        }
       } catch (error) {
         console.error('Error starting recording:', error);
-        Alert.alert('Error', 'Failed to start recording');
+        Alert.alert('Error', 'Failed to start recording: ' + (error as Error).message);
         setIsRecording(false);
         if (timerRef.current) {
           clearInterval(timerRef.current);
@@ -86,10 +114,15 @@ export default function RecordScreen() {
 
   const stopRecording = () => {
     if (cameraRef.current && isRecording) {
-      cameraRef.current.stopRecording();
-      setIsRecording(false);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
+      try {
+        cameraRef.current.stopRecording();
+        setIsRecording(false);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      } catch (error) {
+        console.error('Error stopping recording:', error);
       }
     }
   };
@@ -111,13 +144,17 @@ export default function RecordScreen() {
         to: newUri,
       });
 
+      console.log('Video saved to:', newUri);
+
       Alert.alert(
         'Success',
         'Video saved successfully!',
         [
           {
             text: 'Record Another',
-            onPress: () => setRecordingTime(0),
+            onPress: () => {
+              setRecordingTime(0);
+            },
           },
           {
             text: 'Go Back',
@@ -127,8 +164,12 @@ export default function RecordScreen() {
       );
     } catch (error) {
       console.error('Error saving video:', error);
-      Alert.alert('Error', 'Failed to save video');
+      Alert.alert('Error', 'Failed to save video: ' + (error as Error).message);
     }
+  };
+
+  const toggleCameraFacing = () => {
+    setFacing(current => (current === 'back' ? 'front' : 'back'));
   };
 
   const formatTime = (seconds: number) => {
@@ -142,7 +183,7 @@ export default function RecordScreen() {
       <CameraView
         ref={cameraRef}
         style={styles.camera}
-        facing="back"
+        facing={facing}
         mode="video"
       >
         {/* Header */}
@@ -160,7 +201,7 @@ export default function RecordScreen() {
                       text: 'Stop & Go Back',
                       onPress: () => {
                         stopRecording();
-                        router.back();
+                        setTimeout(() => router.back(), 100);
                       },
                     },
                   ]
@@ -181,6 +222,16 @@ export default function RecordScreen() {
                 {formatTime(recordingTime)} / {formatTime(maxRecordingTime)}
               </Text>
             </View>
+          )}
+
+          {/* Flip Camera Button */}
+          {!isRecording && (
+            <TouchableOpacity
+              style={styles.flipButton}
+              onPress={toggleCameraFacing}
+            >
+              <Ionicons name="camera-reverse" size={28} color="#fff" />
+            </TouchableOpacity>
           )}
         </View>
 
@@ -204,6 +255,7 @@ export default function RecordScreen() {
               isRecording && styles.recordButtonActive,
             ]}
             onPress={isRecording ? stopRecording : startRecording}
+            disabled={isRecording && recordingTime >= maxRecordingTime}
           >
             {isRecording ? (
               <View style={styles.stopIcon} />
@@ -284,6 +336,14 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   closeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  flipButton: {
     width: 44,
     height: 44,
     borderRadius: 22,

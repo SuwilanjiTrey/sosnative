@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { auth } from '../../firebaseConfig';
 import { useEffect, useState } from 'react';
-import { signOut } from 'firebase/auth';
+
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,14 +16,7 @@ export default function TabsLayout() {
     return () => unsubscribe();
   }, []);
 
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      router.replace('/auth/login');
-    } catch (error) {
-      console.error("Sign out error:", error);
-    }
-  };
+
 
   return (
     <Tabs
@@ -38,7 +31,7 @@ export default function TabsLayout() {
           borderTopColor: '#eee',
           height: 65,
           paddingBottom: 10,
-          paddingTop: 10,
+          paddingTop: 20,
         },
       }}
     >
@@ -68,7 +61,7 @@ export default function TabsLayout() {
         options={{ 
           title: 'Records',
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? "location" : "location-outline"} size={28} color={color} />
+            <Ionicons name={focused ? "radio-button-on" : "radio-button-off"} size={28} color={color} />
           ),
         }} 
       />

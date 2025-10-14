@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Alert,
   Image,
@@ -7,222 +7,395 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
-  View
+  View,
+  ActivityIndicator
 } from 'react-native';
-import { useProfile } from '../contexts/ProfileContext';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import { Camera } from 'expo-camera';
+import { auth, db } from '../../firebaseConfig'; // Adjust path to your firebase config
+import { doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { signOut, deleteUser } from 'firebase/auth';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function ChangePictureScreen() {
+export default function ProfileManagementScreen() {
   const router = useRouter();
-  const { profilePicture, updateProfilePicture } = useProfile();
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  
+  // User data
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [email, setEmail] = useState('');
+  
+  // Editing states
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingMobile, setIsEditingMobile] = useState(false);
+  const [tempName, setTempName] = useState('');
+  const [tempMobile, setTempMobile] = useState('');
 
-  // Alternative: Simple colored avatars with initials
-  const avatarOptions = [
-    { id: 1, color: '#4A90E2', initial: 'JD', name: 'Professional' },
-    { id: 2, color: '#FF6B6B', initial: 'SM', name: 'Friendly' },
-    { id: 3, color: '#4ECDC4', initial: 'MJ', name: 'Casual' },
-    { id: 4, color: '#45B7D1', initial: 'AL', name: 'Elegant' },
-    { id: 5, color: '#FFA500', initial: 'TJ', name: 'Creative' },
-    { id: 6, color: '#9B59B6', initial: 'EM', name: 'Confident' },
-    { id: 7, color: '#34495E', initial: 'RK', name: 'Athletic' },
-    { id: 8, color: '#E74C3C', initial: 'LP', name: 'Sophisticated' },
-    { id: 9, color: '#2ECC71', initial: 'DW', name: 'Business' },
-  ];
+  useEffect(() => {
+    loadUserData();
+  }, []);
 
-  // Also include image options for variety
-  const imageOptions = [
-    { 
-      id: 10, 
-      uri: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face', 
-      name: 'Professional Photo' 
-    },
-    { 
-      id: 11, 
-      uri: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face', 
-      name: 'Friendly Photo' 
-    },
-  ];
+  const loadUserData = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
 
-  const handleImageSelect = (imageUri: string) => {
-    setSelectedImage(imageUri);
-  };
-
-  const handleSave = () => {
-    if (selectedImage) {
-      // Update the profile picture in context
-      updateProfilePicture(selectedImage);
-      
-      Alert.alert(
-        'Success',
-        'Profile picture updated successfully!',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-    } else {
-      Alert.alert('Please select a picture');
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setName(data.name || '');
+        setMobileNumber(data.mobileNumber || '');
+        setEmail(data.email || user.email || '');
+        setProfilePicture(data.profilePictureBase64 || null);
+        setTempName(data.name || '');
+        setTempMobile(data.mobileNumber || '');
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+      Alert.alert('Error', 'Failed to load profile data');
     }
   };
 
-  const handleTakePhoto = () => {
-    setShowOptions(false);
-    // For demo purposes, we'll use a placeholder
-    const demoPhoto = 'https://images.unsplash.com/photo-1544725176-7c40e5a71c5e?w=150&h=150&fit=crop&crop=face';
-    setSelectedImage(demoPhoto);
-    Alert.alert('Camera', 'Photo taken and selected!');
+  const convertImageToBase64 = async (uri: string): Promise<string> => {
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      return `data:image/jpeg;base64,${base64}`;
+    } catch (error) {
+      console.error('Error converting to base64:', error);
+      throw error;
+    }
   };
 
-  const handleChooseFromGallery = () => {
+  const handleTakePhoto = async () => {
     setShowOptions(false);
-    // For demo purposes, we'll use a placeholder
-    const demoPhoto = 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&h=150&fit=crop&crop=face';
-    setSelectedImage(demoPhoto);
-    Alert.alert('Gallery', 'Photo selected from gallery!');
+    
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Camera permission is required');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      await uploadProfilePicture(result.assets[0].uri);
+    }
   };
 
-  const showImagePickerOptions = () => {
-    setShowOptions(true);
+  const handleChooseFromGallery = async () => {
+    setShowOptions(false);
+    
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Gallery permission is required');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      await uploadProfilePicture(result.assets[0].uri);
+    }
+  };
+
+  const uploadProfilePicture = async (imageUri: string) => {
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert('Error', 'No user logged in');
+        return;
+      }
+
+      // Convert to base64
+      const base64Image = await convertImageToBase64(imageUri);
+
+      // Update Firestore
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        profilePictureBase64: base64Image,
+        updatedAt: new Date(),
+      });
+
+      setProfilePicture(base64Image);
+      Alert.alert('Success', 'Profile picture updated successfully!');
+    } catch (error) {
+      console.error('Error uploading profile picture:', error);
+      Alert.alert('Error', 'Failed to update profile picture');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveName = async () => {
+    if (!tempName.trim()) {
+      Alert.alert('Error', 'Name cannot be empty');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        name: tempName.trim(),
+        updatedAt: new Date(),
+      });
+
+      setName(tempName.trim());
+      setIsEditingName(false);
+      Alert.alert('Success', 'Name updated successfully!');
+    } catch (error) {
+      console.error('Error updating name:', error);
+      Alert.alert('Error', 'Failed to update name');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveMobile = async () => {
+    if (!tempMobile.trim()) {
+      Alert.alert('Error', 'Mobile number cannot be empty');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        mobileNumber: tempMobile.trim(),
+        updatedAt: new Date(),
+      });
+
+      setMobileNumber(tempMobile.trim());
+      setIsEditingMobile(false);
+      Alert.alert('Success', 'Mobile number updated successfully!');
+    } catch (error) {
+      console.error('Error updating mobile:', error);
+      Alert.alert('Error', 'Failed to update mobile number');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => setShowDeleteModal(true),
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = async () => {
+    try {
+      setLoading(true);
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Delete user document from Firestore
+      await deleteDoc(doc(db, 'users', user.uid));
+
+      // Delete authentication account
+      await deleteUser(user);
+
+      setShowDeleteModal(false);
+      Alert.alert('Account Deleted', 'Your account has been permanently deleted', [
+        { text: 'OK', onPress: () => router.replace('/auth/login') }
+      ]);
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      
+      if (error.code === 'auth/requires-recent-login') {
+        Alert.alert(
+          'Re-authentication Required',
+          'For security reasons, please sign out and sign in again before deleting your account'
+        );
+      } else {
+        Alert.alert('Error', 'Failed to delete account');
+      }
+      setShowDeleteModal(false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Change Profile Picture</Text>
-        <Text style={styles.subtitle}>Choose a new photo for your profile</Text>
-      </View>
-
-      {/* Current Picture */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Current Picture</Text>
-        <View style={styles.currentImageContainer}>
-          <Image 
-            source={{ uri: profilePicture }}
-            style={styles.currentImage}
-          />
-        </View>
-      </View>
-
-      {/* Avatar Options */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Choose Avatar</Text>
-        <Text style={styles.sectionSubtitle}>Select from our collection</Text>
-        
-        <View style={styles.avatarGrid}>
-          {avatarOptions.map((avatar) => (
-            <View key={avatar.id} style={styles.avatarItem}>
-              <TouchableOpacity
-                style={[
-                  styles.avatarOption,
-                  selectedImage === avatar.initial && styles.selectedAvatar,
-                  { backgroundColor: avatar.color }
-                ]}
-                onPress={() => handleImageSelect(avatar.initial)}
-              >
-                <Text style={styles.avatarInitial}>{avatar.initial}</Text>
-                {selectedImage === avatar.initial && (
-                  <View style={styles.selectedOverlay}>
-                    <View style={styles.checkmarkCircle}>
-                      <Text style={styles.checkmark}>✓</Text>
-                    </View>
-                  </View>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.avatarName}>{avatar.name}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Image Options */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Photo Options</Text>
-        <Text style={styles.sectionSubtitle}>Choose from profile photos</Text>
-        
-        <View style={styles.imageOptionsContainer}>
-          {imageOptions.map((image) => (
-            <View key={image.id} style={styles.imageItem}>
-              <TouchableOpacity
-                style={[
-                  styles.imageOption,
-                  selectedImage === image.uri && styles.selectedAvatar
-                ]}
-                onPress={() => handleImageSelect(image.uri)}
-              >
-                <Image 
-                  source={{ uri: image.uri }}
-                  style={styles.avatarImage}
-                />
-                {selectedImage === image.uri && (
-                  <View style={styles.selectedOverlay}>
-                    <View style={styles.checkmarkCircle}>
-                      <Text style={styles.checkmark}>✓</Text>
-                    </View>
-                  </View>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.avatarName}>{image.name}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Upload Option */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Upload Your Own</Text>
-        
-        <TouchableOpacity 
-          style={styles.uploadOption}
-          onPress={showImagePickerOptions}
-        >
-          <View style={styles.uploadIcon}>
-            <Text style={styles.uploadIconText}>📷</Text>
-          </View>
-          <View style={styles.uploadTextContainer}>
-            <Text style={styles.uploadTitle}>Take Photo or Choose from Gallery</Text>
-            <Text style={styles.uploadSubtitle}>Use camera or select from photos</Text>
-          </View>
-          <Text style={styles.arrow}>{'>'}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={28} color="#333" />
         </TouchableOpacity>
+        <Text style={styles.title}>Profile Settings</Text>
+        <View style={styles.placeholder} />
+      </View>
 
-        {/* Selected Image Preview */}
-        {selectedImage && (
-          <View style={styles.selectedPreview}>
-            <Text style={styles.previewTitle}>Selected Picture Preview</Text>
-            <View style={styles.previewContainer}>
-              {selectedImage.includes('http') ? (
-                <Image 
-                  source={{ uri: selectedImage }}
-                  style={styles.selectedPreviewImage}
-                />
-              ) : (
-                <View style={[styles.selectedPreviewImage, { backgroundColor: '#4A90E2', alignItems: 'center', justifyContent: 'center' }]}>
-                  <Text style={styles.previewInitial}>{selectedImage}</Text>
-                </View>
-              )}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#ff4444" />
+        </View>
+      )}
+
+      {/* Profile Picture Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Profile Picture</Text>
+        <View style={styles.profilePictureContainer}>
+          {profilePicture ? (
+            <Image source={{ uri: profilePicture }} style={styles.profileImage} />
+          ) : (
+            <View style={styles.placeholderImage}>
+              <Ionicons name="person" size={60} color="#999" />
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.changePictureButton}
+            onPress={() => setShowOptions(true)}
+          >
+            <Ionicons name="camera" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Name Section */}
+      <View style={styles.section}>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.sectionTitle}>Full Name</Text>
+          {!isEditingName && (
+            <TouchableOpacity onPress={() => {
+              setIsEditingName(true);
+              setTempName(name);
+            }}>
+              <Ionicons name="pencil" size={20} color="#007AFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+        {isEditingName ? (
+          <View>
+            <TextInput
+              style={styles.input}
+              value={tempName}
+              onChangeText={setTempName}
+              placeholder="Enter your name"
+              autoFocus
+            />
+            <View style={styles.editButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setIsEditingName(false);
+                  setTempName(name);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveName}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
             </View>
           </View>
+        ) : (
+          <Text style={styles.fieldValue}>{name || 'Not set'}</Text>
         )}
       </View>
 
-      {/* Action Buttons */}
-      <View style={styles.actionSection}>
-        <TouchableOpacity 
-          style={styles.cancelButton}
-          onPress={() => router.back()}
+      {/* Mobile Number Section */}
+      <View style={styles.section}>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.sectionTitle}>Mobile Number</Text>
+          {!isEditingMobile && (
+            <TouchableOpacity onPress={() => {
+              setIsEditingMobile(true);
+              setTempMobile(mobileNumber);
+            }}>
+              <Ionicons name="pencil" size={20} color="#007AFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+        {isEditingMobile ? (
+          <View>
+            <TextInput
+              style={styles.input}
+              value={tempMobile}
+              onChangeText={setTempMobile}
+              placeholder="Enter your mobile number"
+              keyboardType="phone-pad"
+              autoFocus
+            />
+            <View style={styles.editButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setIsEditingMobile(false);
+                  setTempMobile(mobileNumber);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveMobile}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.fieldValue}>{mobileNumber || 'Not set'}</Text>
+        )}
+      </View>
+
+      {/* Email Section (Read-only) */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Email</Text>
+        <Text style={styles.fieldValue}>{email}</Text>
+        <Text style={styles.fieldNote}>Email cannot be changed</Text>
+      </View>
+
+      {/* Account Actions */}
+      <View style={styles.actionsSection}>
+
+
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={handleDeleteAccount}
         >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[
-            styles.saveButton,
-            !selectedImage && styles.saveButtonDisabled
-          ]}
-          onPress={handleSave}
-          disabled={!selectedImage}
-        >
-          <Text style={styles.saveButtonText}>Save Picture</Text>
+          <Ionicons name="trash-outline" size={24} color="#ff4444" />
+          <Text style={styles.deleteButtonText}>Delete Account</Text>
         </TouchableOpacity>
       </View>
 
@@ -236,27 +409,60 @@ export default function ChangePictureScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Choose Option</Text>
-            
-            <TouchableOpacity 
-              style={styles.modalOption}
-              onPress={handleTakePhoto}
-            >
+
+            <TouchableOpacity style={styles.modalOption} onPress={handleTakePhoto}>
+              <Ionicons name="camera-outline" size={24} color="#007AFF" />
               <Text style={styles.modalOptionText}>Take Photo</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.modalOption}
               onPress={handleChooseFromGallery}
             >
+              <Ionicons name="images-outline" size={24} color="#007AFF" />
               <Text style={styles.modalOptionText}>Choose from Gallery</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.modalCancel}
               onPress={() => setShowOptions(false)}
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <Ionicons name="warning" size={60} color="#ff4444" />
+            <Text style={styles.deleteModalTitle}>Delete Account?</Text>
+            <Text style={styles.deleteModalText}>
+              This will permanently delete your account and all associated data. This
+              action cannot be undone.
+            </Text>
+
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={styles.deleteModalCancel}
+                onPress={() => setShowDeleteModal(false)}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirm}
+                onPress={confirmDeleteAccount}
+              >
+                <Text style={styles.deleteModalConfirmText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -270,25 +476,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#fff',
-    padding: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
+  backButton: {
+    padding: 4,
+  },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
+  placeholder: {
+    width: 36,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
   },
   section: {
     backgroundColor: '#fff',
-    margin: 16,
-    marginTop: 0,
+    marginHorizontal: 16,
+    marginTop: 16,
     padding: 20,
     borderRadius: 12,
     shadowColor: '#000',
@@ -298,199 +520,77 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 16,
-  },
-  currentImageContainer: {
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  currentImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#f0f0f0',
-  },
-  avatarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  imageOptionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  avatarItem: {
-    width: '30%',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  imageItem: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  avatarOption: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: 'transparent',
-    position: 'relative',
-    overflow: 'hidden',
-    marginBottom: 8,
-    backgroundColor: '#f0f0f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  imageOption: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: 'transparent',
-    position: 'relative',
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  selectedAvatar: {
-    borderColor: '#007AFF',
-    transform: [{ scale: 1.05 }],
-  },
-  avatarInitial: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 40,
-  },
-  selectedOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 122, 255, 0.3)',
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmarkCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  checkmark: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  avatarName: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  uploadOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderStyle: 'dashed',
-  },
-  uploadIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#007AFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  uploadIconText: {
-    fontSize: 20,
-    color: '#fff',
-  },
-  uploadTextContainer: {
-    flex: 1,
-  },
-  uploadTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  uploadSubtitle: {
-    fontSize: 14,
-    color: '#666',
-  },
-  arrow: {
-    fontSize: 18,
-    color: '#999',
-    fontWeight: 'bold',
-  },
-  selectedPreview: {
-    marginTop: 20,
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  previewTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 12,
   },
-  previewContainer: {
+  profilePictureContainer: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#f0f0f0',
+  },
+  placeholderImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  selectedPreviewImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  changePictureButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: '35%',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#007AFF',
+    borderColor: '#fff',
   },
-  previewInitial: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  actionSection: {
+  fieldHeader: {
     flexDirection: 'row',
-    padding: 16,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  fieldValue: {
+    fontSize: 16,
+    color: '#666',
+  },
+  fieldNote: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  editButtons: {
+    flexDirection: 'row',
     gap: 12,
-    marginBottom: 20,
   },
   cancelButton: {
     flex: 1,
-    padding: 16,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
     alignItems: 'center',
-    backgroundColor: '#fff',
   },
   cancelButtonText: {
     fontSize: 16,
@@ -499,18 +599,53 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 1,
-    padding: 16,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#007AFF',
     alignItems: 'center',
-    backgroundColor: '#ff4444',
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#ccc',
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  actionsSection: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 30,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginLeft: 8,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ff4444',
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ff4444',
+    marginLeft: 8,
   },
   modalOverlay: {
     flex: 1,
@@ -532,15 +667,17 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   modalOptionText: {
     fontSize: 16,
-    textAlign: 'center',
     color: '#007AFF',
     fontWeight: '500',
+    marginLeft: 12,
   },
   modalCancel: {
     padding: 16,
@@ -553,5 +690,64 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#666',
     fontWeight: '600',
+  },
+  deleteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  deleteModalText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  deleteModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  deleteModalCancel: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  deleteModalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  deleteModalConfirm: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: '#ff4444',
+    alignItems: 'center',
+  },
+  deleteModalConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

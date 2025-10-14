@@ -109,11 +109,7 @@ export default function LoginScreen() {
         <Text style={styles.registerText}>Don't have an account? Register</Text>
       </TouchableOpacity>
 
-      {/* Development Note */}
-      <Text style={styles.devNote}>
-        Note: You may see CORS errors in console - this is normal in development environment. 
-        Your login is working correctly with Firebase.
-      </Text>
+      
     </View>
   );
 }

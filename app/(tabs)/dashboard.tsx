@@ -4,18 +4,27 @@ import { View, Text, TouchableOpacity, Image, ScrollView, StyleSheet, ActivityIn
 import SOSButton from '../components/SOSButton';
 import { useAuth } from '../../hooks/useAuth';
 import { StyledText } from '../../components/StyledText';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+type CircleCategory = 'Sibling' | 'Friends' | 'Family' | 'Emergency' | 'Other';
+
+type CircleData = {
+  id: string;
+  category: CircleCategory;
+  memberCount: number;
+  avatars: string[];
+  initials: string[];
+};
 
 export default function DashboardScreen() {
   const { user } = useAuth();
   const [userData, setUserData] = useState<any>(null);
+  const [circles, setCircles] = useState<CircleData[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -28,36 +37,65 @@ export default function DashboardScreen() {
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
-      } finally {
-        setLoading(false);
       }
     };
 
     fetchUserData();
   }, [user]);
 
-  const circles = [
-    { 
-      name: 'Sibling', 
-      members: 3, 
-      id: '1',
-      avatars: [
-        'https://i.pravatar.cc/150?img=1',
-        'https://i.pravatar.cc/150?img=2',
-        'https://i.pravatar.cc/150?img=3',
-      ]
-    },
-    { 
-      name: 'Friends', 
-      members: 8, 
-      id: '2',
-      avatars: [
-        'https://i.pravatar.cc/150?img=4',
-        'https://i.pravatar.cc/150?img=5',
-        'https://i.pravatar.cc/150?img=6',
-      ]
-    },
-  ];
+  useEffect(() => {
+    const fetchCircles = async () => {
+      if (!user) return;
+
+      setLoading(true);
+      try {
+        const circlesRef = collection(db, 'users', user.uid, 'circles');
+        const snapshot = await getDocs(circlesRef);
+        
+        // Group circles by category
+        const groupedByCategory: Record<CircleCategory, any[]> = {
+          Sibling: [],
+          Friends: [],
+          Family: [],
+          Emergency: [],
+          Other: [],
+        };
+
+        snapshot.docs.forEach(doc => {
+          const data = doc.data();
+          const category: CircleCategory = data.category || 'Other';
+          groupedByCategory[category].push({
+            ...data,
+            id: doc.id,
+          });
+        });
+
+        // Transform grouped data into circle cards
+        const circleCards: CircleData[] = Object.entries(groupedByCategory)
+          .filter(([_, members]) => members.length > 0)
+          .map(([category, members]) => {
+            const firstThree = members.slice(0, 3);
+            return {
+              id: category,
+              category: category as CircleCategory,
+              memberCount: members.length,
+              avatars: firstThree
+                .map(member => member.profilePictureBase64),
+              initials: firstThree
+                .map(member => member.name.charAt(0).toUpperCase()),
+            };
+          });
+
+        setCircles(circleCards);
+      } catch (error) {
+        console.error('Error fetching circles:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCircles();
+  }, [user]);
 
   const getImageSource = () => {
     if (userData?.profilePictureBase64) {
@@ -92,7 +130,11 @@ export default function DashboardScreen() {
             </Text>
             <View style={styles.premiumBadgeSmall}>
               <Ionicons name="shield-checkmark" size={14} color="#4caf50" />
-              <Text style={styles.premiumTextSmall}>Premium Account</Text>
+              <Text style={styles.premiumTextSmall}>
+                
+                {userData?.isPremium ? 'Premium user' : 'Basic Plan'}
+                
+                </Text>
             </View>
           </View>
         </View>
@@ -121,35 +163,39 @@ export default function DashboardScreen() {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Emergency Circle</Text>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('./circle')}
+              activeOpacity={0.7}
+            >
               <Text style={styles.manageText}>Manage</Text>
             </TouchableOpacity>
           </View>
           
-          <View style={styles.circlesRow}>
-            {circles.map(circle => (
-              <View key={circle.id} style={styles.circleCard}>
-                <Text style={styles.circleName}>{circle.name}</Text>
-                <Text style={styles.circleMembers}>{circle.members} Members</Text>
-                <View style={styles.avatarsContainer}>
-                  {circle.avatars.map((avatar, index) => (
-                    <Image
-                      key={index}
-                      source={{ uri: avatar }}
-                      style={[styles.circleAvatar, { marginLeft: index > 0 ? -10 : 0 }]}
-                    />
-                  ))}
+          {circles.length === 0 ? (
+            <View style={styles.emptyCirclesContainer}>
+              <Text style={styles.emptyCirclesText}>No emergency circles yet. Add members to get started!</Text>
+            </View>
+          ) : (
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+            >
+              {circles.map(circle => (
+                <CircleCardComponent key={circle.id} circle={circle} />
+              ))}
+              
+              <TouchableOpacity 
+                style={styles.addCircleButton}
+                onPress={() => router.push('./circle')}
+              >
+                <View style={styles.addCircleIcon}>
+                  <Ionicons name="add" size={24} color="#d32f2f" />
                 </View>
-              </View>
-            ))}
-            
-            <TouchableOpacity style={styles.addCircleButton}>
-              <View style={styles.addCircleIcon}>
-                <Ionicons name="add" size={24} color="#d32f2f" />
-              </View>
-              <Text style={styles.addCircleCount}>+3</Text>
-            </TouchableOpacity>
-          </View>
+                <Text style={styles.addCircleCount}>+Add</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
         </View>
 
         {/* SOS Button */}
@@ -252,12 +298,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
   },
-  settingsIcon: {
-    marginLeft: 'auto',
-    backgroundColor: '#e3f2fd',
-    padding: 8,
-    borderRadius: 20,
-  },
   sectionContainer: {
     paddingHorizontal: 20,
     marginBottom: 30,
@@ -277,6 +317,19 @@ const styles = StyleSheet.create({
     color: '#2196f3',
     fontSize: 14,
     fontWeight: '600',
+  },
+  emptyCirclesContainer: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 100,
+  },
+  emptyCirclesText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
   circlesRow: {
     flexDirection: 'row',
@@ -338,5 +391,82 @@ const styles = StyleSheet.create({
   sosContainer: {
     alignItems: 'center',
     paddingVertical: 40,
+  },
+});
+
+// Circle Card Component
+function CircleCardComponent({ circle }: { circle: CircleData }) {
+  return (
+    <View style={circleCardStyles.card}>
+      <Text style={circleCardStyles.title}>{circle.category}</Text>
+      <Text style={circleCardStyles.memberCount}>{circle.memberCount} Members</Text>
+      <View style={circleCardStyles.avatarsContainer}>
+        {circle.avatars.map((avatar, index) => (
+          <View key={index} style={[circleCardStyles.avatar, { marginLeft: index > 0 ? -10 : 0 }]}>
+            {avatar ? (
+              <Image
+                source={{ uri: avatar }}
+                style={circleCardStyles.avatarImage}
+              />
+            ) : (
+              <View style={circleCardStyles.initialsContainer}>
+                <Text style={circleCardStyles.initialText}>{circle.initials[index]}</Text>
+              </View>
+            )}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const circleCardStyles = StyleSheet.create({
+  card: {
+    width: 160,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 12,
+    justifyContent: 'space-between',
+    minHeight: 160,
+  },
+  title: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 4,
+  },
+  memberCount: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 16,
+  },
+  avatarsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#fff',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  initialsContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
   },
 });

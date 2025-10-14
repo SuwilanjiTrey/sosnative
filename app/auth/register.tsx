@@ -38,6 +38,7 @@ export default function RegisterScreen() {
         email,
         createdAt: new Date(),
         lastActiveAt: new Date(),
+        isPremium: false,
         settings: { 
           emailFallback: true, 
           smsFallback: false,
@@ -49,18 +50,8 @@ export default function RegisterScreen() {
         fcmTokens: {}
       });
 
-      // Show success message
-      Alert.alert(
-        "Success!",
-        "Your account has been created successfully!",
-        [
-          {
-            text: "Continue",
-            onPress: () => router.replace('/(tabs)/dashboard'),
-            style: "default"
-          }
-        ]
-      );
+      // Redirect to phone verification page
+      router.replace('/auth/phone');
     } catch (error: any) {
       console.error("Registration error:", error);
       
@@ -147,10 +138,7 @@ export default function RegisterScreen() {
       </TouchableOpacity>
 
       {/* Development Note */}
-      <Text style={styles.devNote}>
-        Note: You may see CORS errors in console - this is normal in development environment. 
-        Your account is being created successfully in Firebase.
-      </Text>
+
     </View>
   );
 }

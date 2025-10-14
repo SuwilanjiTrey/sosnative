@@ -18,7 +18,7 @@ export default function VerifyScreen() {
 
   const checkVerified = () => {
     if (auth.currentUser?.emailVerified) {
-      router.replace('/(tabs)/dashboard');
+      router.push({ pathname: '/auth/otp'});
     } else {
       Alert.alert("Not Verified", "Please verify your email first.");
     }

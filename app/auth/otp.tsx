@@ -1,7 +1,10 @@
 // app/auth/otp.tsx
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { getAuth } from 'firebase/auth';
+import { db } from '../../firebaseConfig';
+import { doc, updateDoc } from 'firebase/firestore';
 
 export default function OTPScreen() {
   const { phone } = useLocalSearchParams();
@@ -9,17 +12,46 @@ export default function OTPScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleVerify = () => {
-    if (code.length === 4) {
-      // Mock successful verification
-      console.log('OTP verified successfully');
-      router.replace('/(tabs)/dashboard'); // ✅ Use replace instead of push
-    } else {
+  const handleVerify = async () => {
+    if (code.length !== 4) {
       Alert.alert("Invalid Code", "Please enter a 4-digit code");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) {
+        Alert.alert("Error", "User session not found. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Format phone number with country code
+      const formattedPhone = `+260${phone}`;
+
+      // Update user document with phone number
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        mobileNumber: formattedPhone,
+        phoneVerified: true,
+        updatedAt: new Date(),
+      });
+
+      console.log('Phone verified and saved successfully');
+      router.replace('/(tabs)/dashboard');
+    } catch (error: any) {
+      console.error('Error verifying phone:', error);
+      Alert.alert("Verification Failed", "Could not verify your phone number. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleResend = () => {
+    setCode('');
     Alert.alert("Success", "New code sent successfully!");
   };
 
@@ -39,18 +71,23 @@ export default function OTPScreen() {
         keyboardType="number-pad"
         maxLength={4}
         style={styles.otpInput}
+        editable={!loading}
       />
 
       <TouchableOpacity
-        style={styles.button}
+        style={[styles.button, (code.length !== 4 || loading) && styles.buttonDisabled]}
         onPress={handleVerify}
-        disabled={code.length !== 4}
+        disabled={code.length !== 4 || loading}
       >
-        <Text style={styles.buttonText}>Verify Code</Text>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Verify Code</Text>
+        )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={handleResend}>
-        <Text style={styles.resend}>Didn’t receive the code? Resend code</Text>
+      <TouchableOpacity onPress={handleResend} disabled={loading}>
+        <Text style={styles.resend}>Didn't receive the code? Resend code</Text>
       </TouchableOpacity>
     </View>
   );
@@ -94,6 +131,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 20,
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
   },
   buttonText: {
     color: '#fff',

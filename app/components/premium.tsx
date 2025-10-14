@@ -1,8 +1,10 @@
-// app/(drawer)/premium.tsx
+// app/components/premium.tsx
 import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
 import { StyledText } from '../../components/StyledText';
+import { useRouter } from 'expo-router';
 
 export default function PremiumScreen() {
+  const router = useRouter();
   const plans = [
     {
       id: 'monthly',
@@ -11,6 +13,7 @@ export default function PremiumScreen() {
       period: '/month',
       features: [
         'Live Location Tracking',
+        'rapid response from law enforcement',
         'Priority SOS Response',
         'Unlimited Circle Members',
         '24/7 Support',
@@ -35,9 +38,15 @@ export default function PremiumScreen() {
   ];
 
   const handleSubscribe = (planId: string) => {
-    // Handle subscription logic
-    console.log(`Subscribing to ${planId}`);
-    // You would integrate with payment gateway here
+    const planData = plans.find(p => p.id === planId);
+    router.push({
+      pathname: './PaymentGateway',
+      params: {
+        planId: planId,
+        amount: planData?.price.replace('K', ''),
+        planName: planData?.name
+      }
+    });
   };
 
   return (
