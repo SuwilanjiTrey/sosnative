@@ -24,151 +24,33 @@ import {
   query,
   where,
   Timestamp,
+  onSnapshot
 } from 'firebase/firestore';
+
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { FirebaseService, CircleMember, CircleCategory, UserProfile } from '../auth/firebaseService'; // Import the service
 import { db } from '../../firebaseConfig';
 
-/**
- * MyCircleScreen.tsx
- * ------------------
- * React Native implementation with Firebase Authentication
- * 
- * Firebase Structure:
- * users/{authenticatedUserId}/
- *   - name, email, mobileNumber, photoURL, profilePictureBase64
- *   - createdAt, updatedAt, lastActiveAt
- *   - settings: {audio, camera, emailFallback, location, photo, smsFallback}
- *   - fcmTokens: {}
- *   circles/{circleId}/
- *     - mobileNumber, name, category, profilePictureBase64, isRegistered, addedAt
- */
-
-// Types
-type CircleCategory = 'Sibling' | 'Friends' | 'Family' | 'Emergency' | 'Other';
-
-type CircleMember = {
-  id: string;
-  mobileNumber: string;
-  name: string;
-  category: CircleCategory;
-  profilePictureBase64?: string;
-  isRegistered: boolean;
-  addedAt: string;
-};
-
-type UserProfile = {
-  uid: string;
-  name: string;
-  email: string;
-  mobileNumber?: string;
-  photoURL?: string;
-  profilePictureBase64?: string;
-};
-
-// Firebase Service
-class FirebaseService {
-  static getCurrentUserId(): string | null {
-    const auth = getAuth();
-    return auth.currentUser?.uid || null;
+// Add this helper function to your utilities file or at the top of your component
+export function normalizePhoneNumber(phoneNumber: string): string {
+  // Remove all non-digit characters
+  let cleaned = phoneNumber.replace(/\D/g, '');
+  
+  // Remove country code if present (260 for Zambia)
+  if (cleaned.startsWith('260')) {
+    cleaned = cleaned.slice(3);
   }
-
-  static async fetchUserCircles(userId: string): Promise<CircleMember[]> {
-    try {
-      const circlesRef = collection(db, 'users', userId, 'circles');
-      const snapshot = await getDocs(circlesRef);
-      
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CircleMember[];
-    } catch (error) {
-      console.error('Error fetching circles:', error);
-      throw error;
-    }
+  
+  // Ensure it starts with 0
+  if (!cleaned.startsWith('0')) {
+    cleaned = '0' + cleaned;
   }
+  
+  return cleaned;
+}
 
-  static async findUserByMobile(mobileNumber: string): Promise<UserProfile | null> {
-    try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('mobileNumber', '==', mobileNumber));
-      const snapshot = await getDocs(q);
-      
-      if (snapshot.empty) return null;
-      
-      const userData = snapshot.docs[0].data();
-      return {
-        uid: snapshot.docs[0].id,
-        name: userData.name || '',
-        email: userData.email || '',
-        mobileNumber: userData.mobileNumber,
-        photoURL: userData.photoURL,
-        profilePictureBase64: userData.profilePictureBase64,
-      };
-    } catch (error) {
-      console.error('Error finding user:', error);
-      return null;
-    }
-  }
-
-  static async addCircleMember(
-    userId: string,
-    member: Omit<CircleMember, 'id' | 'addedAt'>
-  ): Promise<CircleMember> {
-    try {
-      const circlesRef = collection(db, 'users', userId, 'circles');
-      
-      const memberData: any = {
-        mobileNumber: member.mobileNumber,
-        name: member.name,
-        category: member.category,
-        isRegistered: member.isRegistered,
-        addedAt: Timestamp.now(),
-      };
-      
-      if (member.profilePictureBase64) {
-        memberData.profilePictureBase64 = member.profilePictureBase64;
-      }
-      
-      const docRef = await addDoc(circlesRef, memberData);
-      
-      return {
-        id: docRef.id,
-        mobileNumber: member.mobileNumber,
-        name: member.name,
-        category: member.category,
-        profilePictureBase64: member.profilePictureBase64,
-        isRegistered: member.isRegistered,
-        addedAt: new Date().toISOString(),
-      };
-    } catch (error) {
-      console.error('Error adding member:', error);
-      throw error;
-    }
-  }
-
-  static async updateCircleMember(
-    userId: string,
-    memberId: string,
-    updates: Partial<CircleMember>
-  ): Promise<void> {
-    try {
-      const memberRef = doc(db, 'users', userId, 'circles', memberId);
-      await updateDoc(memberRef, updates);
-    } catch (error) {
-      console.error('Error updating member:', error);
-      throw error;
-    }
-  }
-
-  static async removeCircleMember(userId: string, memberId: string): Promise<void> {
-    try {
-      const memberRef = doc(db, 'users', userId, 'circles', memberId);
-      await deleteDoc(memberRef);
-    } catch (error) {
-      console.error('Error removing member:', error);
-      throw error;
-    }
-  }
+export function phoneNumbersMatch(phone1: string, phone2: string): boolean {
+  return normalizePhoneNumber(phone1) === normalizePhoneNumber(phone2);
 }
 
 export default function MyCircleScreen() {
@@ -203,6 +85,53 @@ export default function MyCircleScreen() {
     }
   }, [currentUserId]);
 
+  // In MyCircleScreen.tsx, add this useEffect after the existing ones
+// In MyCircleScreen.tsx, update the real-time listener useEffect
+useEffect(() => {
+  if (!currentUserId) return;
+
+  console.log('[CIRCLES LISTENER] Setting up real-time listener for user:', currentUserId);
+  
+  // Set up real-time listener for circle changes
+  const circlesRef = collection(db, 'users', currentUserId, 'circles');
+  const unsubscribe = onSnapshot(circlesRef, (snapshot) => {
+    const updatedCircles: CircleMember[] = [];
+    
+    snapshot.docChanges().forEach((change) => {
+      console.log(`[CIRCLES LISTENER] Document change: ${change.type} for doc ${change.doc.id}`);
+    });
+    
+    snapshot.forEach((doc) => {
+      const memberData = doc.data();
+      updatedCircles.push({
+        id: doc.id,
+        ...memberData,
+      } as CircleMember);
+    });
+    
+    console.log(`[CIRCLES LISTENER] Updated circles: ${updatedCircles.length} members`);
+    console.log('[CIRCLES LISTENER] Circle members:', updatedCircles.map(m => ({ id: m.id, name: m.name, status: m.status })));
+    
+    // Check for duplicates before setting state
+    const uniqueCircles = updatedCircles.filter((circle, index, self) =>
+      index === self.findIndex(c => c.id === circle.id)
+    );
+    
+    if (uniqueCircles.length !== updatedCircles.length) {
+      console.warn('[CIRCLES LISTENER] Found duplicate circle members, removing duplicates');
+    }
+    
+    setCircles(uniqueCircles);
+  }, (error) => {
+    console.error('[CIRCLES LISTENER] Error listening to circles:', error);
+  });
+
+  return () => {
+    console.log('[CIRCLES LISTENER] Unsubscribing from circles listener');
+    unsubscribe();
+  };
+}, [currentUserId]);
+
   async function loadCircles() {
     if (!currentUserId) {
       Alert.alert('Error', 'You must be logged in to view circles');
@@ -223,9 +152,10 @@ export default function MyCircleScreen() {
     }
   }
 
-  function handleRemoveMember(memberId: string) {
+// Update handleRemoveMember
+  const handleRemoveMember = async (memberId: string) => {
     if (!currentUserId) return;
-
+  
     Alert.alert(
       'Remove Member',
       'Are you sure you want to remove this member from your circle?',
@@ -235,21 +165,23 @@ export default function MyCircleScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            setLoading(true);
             try {
               await FirebaseService.removeCircleMember(currentUserId, memberId);
-              setCircles(prev => prev.filter(m => m.id !== memberId));
               Alert.alert('Success', 'Member removed from circle');
             } catch (error) {
               Alert.alert('Error', 'Failed to remove member');
+            } finally {
+              setLoading(false);
             }
           },
         },
       ]
     );
-  }
-
+  };
+  
   function handleCallMember(member: CircleMember) {
-    const phoneNumber = member.mobileNumber.replace(/\s+/g, ''); // Remove spaces
+    const phoneNumber = member.mobileNumber.replace(/\s+/g, '');
     const url = `tel:${phoneNumber}`;
   
     Linking.canOpenURL(url)
@@ -289,6 +221,8 @@ export default function MyCircleScreen() {
     );
   }
 
+  
+
   const groupedCircles = circles.reduce((acc, member) => {
     if (!acc[member.category]) acc[member.category] = [];
     acc[member.category].push(member);
@@ -297,7 +231,6 @@ export default function MyCircleScreen() {
 
   const categories: CircleCategory[] = ['Sibling', 'Friends', 'Family', 'Emergency', 'Other'];
 
-  // If a category is selected, show members view
   if (selectedCategory) {
     const members = groupedCircles[selectedCategory] || [];
     return (
@@ -326,7 +259,7 @@ export default function MyCircleScreen() {
           ) : (
             <View style={styles.membersList}>
               {members.map((member) => (
-                <View key={member.id} style={styles.memberCard}>
+  <View key={member.id} style={styles.memberCard}>
                   <View style={styles.memberInfo}>
                     {member.profilePictureBase64 ? (
                       <Image
@@ -343,11 +276,24 @@ export default function MyCircleScreen() {
                     <View style={styles.memberDetails}>
                       <Text style={styles.memberName}>{member.name}</Text>
                       <Text style={styles.memberPhone}>{member.mobileNumber}</Text>
-                      {member.isRegistered && (
-                        <View style={styles.registeredBadge}>
-                          <Text style={styles.registeredText}>Registered User</Text>
-                        </View>
-                      )}
+                      <View style={styles.memberStatusRow}>
+                        {member.isRegistered && (
+                          <View style={styles.registeredBadge}>
+                            <Text style={styles.registeredText}>Registered</Text>
+                          </View>
+                        )}
+                        {/* NEW: Show invitation status */}
+                        {member.status === 'pending' && (
+                          <View style={styles.pendingBadge}>
+                            <Text style={styles.pendingText}>Pending</Text>
+                          </View>
+                        )}
+                        {member.status === 'accepted' && (
+                          <View style={styles.acceptedBadge}>
+                            <Text style={styles.acceptedText}>Accepted</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
                   
@@ -378,26 +324,34 @@ export default function MyCircleScreen() {
           <Text style={styles.fabIcon}>+</Text>
         </TouchableOpacity>
 
-        <AddMemberModal
-          visible={showAddModal}
-          onClose={() => setShowAddModal(false)}
-          defaultCategory={selectedCategory}
-          onAdd={async (member) => {
-            if (!currentUserId) return;
-            try {
-              const newMember = await FirebaseService.addCircleMember(currentUserId, member);
-              setCircles(prev => [...prev, newMember]);
-              setShowAddModal(false);
-            } catch (error) {
-              Alert.alert('Error', 'Failed to add member');
-            }
-          }}
-        />
+        
+<AddMemberModal
+  visible={showAddModal}
+  onClose={() => setShowAddModal(false)}
+  currentUserId={currentUserId}
+  //Update the modal's onAdd function
+  onAdd={async (member, invitedUserData) => {
+    if (!currentUserId) return;
+    setLoading(true);
+    try {
+      await FirebaseService.addCircleMember(
+        currentUserId,
+        member,
+        invitedUserData
+      );
+      setShowAddModal(false);
+      Alert.alert('Success', 'Member added to circle');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add member');
+    } finally {
+      setLoading(false);
+    }
+  }}
+/>
       </View>
     );
   }
 
-  // Main circles overview
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -409,6 +363,12 @@ export default function MyCircleScreen() {
           <Text style={styles.searchIcon}>🔍</Text>
         </TouchableOpacity>
       </View>
+
+      {loading && (
+  <View style={styles.loadingOverlay}>
+    <ActivityIndicator size="large" color="#3B82F6" />
+  </View>
+)}
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {loading ? (
@@ -486,36 +446,50 @@ export default function MyCircleScreen() {
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
-      <AddMemberModal
-        visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onAdd={async (member) => {
-          if (!currentUserId) return;
-          try {
-            const newMember = await FirebaseService.addCircleMember(currentUserId, member);
-            setCircles(prev => [...prev, newMember]);
-            setShowAddModal(false);
-          } catch (error) {
-            Alert.alert('Error', 'Failed to add member');
-          }
-        }}
-      />
+
+    
+     
+<AddMemberModal
+  visible={showAddModal}
+  onClose={() => setShowAddModal(false)}
+  currentUserId={currentUserId}
+  //Update the modal's onAdd function
+  onAdd={async (member, invitedUserData) => {
+    if (!currentUserId) return;
+    setLoading(true);
+    try {
+      await FirebaseService.addCircleMember(
+        currentUserId,
+        member,
+        invitedUserData
+      );
+      setShowAddModal(false);
+      Alert.alert('Success', 'Member added to circle');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add member');
+    } finally {
+      setLoading(false);
+    }
+  }}
+/>
     </View>
   );
 }
 
-// Add Member Modal Component
+// Add Member Modal Component - UPDATED
 function AddMemberModal({
   visible,
   onClose,
   onAdd,
   defaultCategory,
+  currentUserId,
 }: {
   visible: boolean;
   onClose: () => void;
-  onAdd: (member: Omit<CircleMember, 'id' | 'addedAt'>) => Promise<void>;
+  onAdd: (member: Omit<CircleMember, 'id' | 'addedAt'>, invitedUserData?: UserProfile | null) => Promise<void>;
   defaultCategory?: CircleCategory;
-}) {
+  currentUserId: string;
+}){
   const [mobileNumber, setMobileNumber] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<CircleCategory>(defaultCategory || 'Friends');
@@ -530,24 +504,62 @@ function AddMemberModal({
     }
   }, [defaultCategory]);
 
-  async function handleSearchUser() {
-    if (!mobileNumber.trim()) return;
-    setSearching(true);
-    try {
-      const user = await FirebaseService.findUserByMobile(mobileNumber);
-      setFoundUser(user);
-      if (user) {
-        setName(user.name);
-        if (user.profilePictureBase64) {
-          setProfileImage(user.profilePictureBase64);
+// Replace your handleSearchUser function with this:
+async function handleSearchUser() {
+  if (!mobileNumber.trim()) return;
+  
+  setSearching(true);
+  try {
+    console.log("[DEBUG] handleSearchUser called with mobileNumber:", mobileNumber);
+    
+    // Normalize the search input
+    const normalizedSearchNumber = normalizePhoneNumber(mobileNumber);
+    console.log("[DEBUG] Normalized search number:", normalizedSearchNumber);
+    
+    // Search users collection directly
+    const user = await FirebaseService.findUserByMobile(mobileNumber);
+    console.log("[DEBUG] findUserByMobile result:", user ? JSON.stringify(user) : "null");
+    
+    // If not found with original number, try normalizing the database number too
+    if (!user) {
+      // This requires modifying FirebaseService to return all users and filter client-side
+      // OR modify the backend query. For now, we normalize and search again
+      const allUsers = await FirebaseService.getAllUsers(); // You may need to add this method
+      
+      const matchedUser = allUsers?.find(u => 
+        phoneNumbersMatch(u.mobileNumber, mobileNumber)
+      );
+      
+      if (matchedUser) {
+        setFoundUser(matchedUser);
+        setName(matchedUser.name);
+        if (matchedUser.profilePictureBase64) {
+          setProfileImage(matchedUser.profilePictureBase64);
         }
+        console.log("[DEBUG] User found with normalized number");
+        return;
       }
-    } catch (error) {
-      console.error('Error searching user:', error);
-    } finally {
-      setSearching(false);
     }
+    
+    setFoundUser(user);
+    if (user) {
+      setName(user.name);
+      if (user.profilePictureBase64) {
+        setProfileImage(user.profilePictureBase64);
+      }
+      console.log("[DEBUG] User found and data set");
+    } else {
+      setName(''); // Reset name if user not found
+      Alert.alert('User Not Found', 'This user is not registered yet');
+      console.log("[DEBUG] User not found");
+    }
+  } catch (error) {
+    console.error('Error searching user:', error);
+    Alert.alert('Error', 'Failed to search user');
+  } finally {
+    setSearching(false);
   }
+}
 
   async function handlePickImage() {
     try {
@@ -576,31 +588,82 @@ function AddMemberModal({
     }
   }
 
-  async function handleSubmit() {
-    if (!mobileNumber.trim() || !name.trim()) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
+// In AddMemberModal's handleSubmit function
+async function handleSubmit() {
+  if (!mobileNumber.trim() || !name.trim()) {
+    Alert.alert('Error', 'Please fill in all required fields');
+    return;
+  }
+
+  setSaving(true);
+  try {
+    // Explicitly type the memberData object with the correct status type
+    const memberData: Omit<CircleMember, 'id' | 'addedAt'> = {
+      mobileNumber: mobileNumber.trim(),
+      name: name.trim(),
+      category,
+      profilePictureBase64: profileImage || foundUser?.profilePictureBase64,
+      isRegistered: !!foundUser,
+      status: 'pending' as const, // Explicitly set to 'pending' with const assertion
+      invitedBy: currentUserId,
+    };
+    
+    // Check if onAdd accepts one or two parameters
+    if (onAdd.length === 1) {
+      // onAdd only accepts one parameter
+      await onAdd(memberData);
+    } else {
+      // onAdd accepts two parameters
+      await onAdd(memberData, foundUser);
     }
 
-    setSaving(true);
-    try {
-      await onAdd({
-        mobileNumber: mobileNumber.trim(),
-        name: name.trim(),
-        category,
-        profilePictureBase64: profileImage || foundUser?.profilePictureBase64,
-        isRegistered: !!foundUser,
-      });
-      // Reset form
-      setMobileNumber('');
-      setName('');
-      setFoundUser(null);
-      setProfileImage(null);
-      setCategory(defaultCategory || 'Friends');
-    } finally {
-      setSaving(false);
-    }
+    // Reset form
+    setMobileNumber('');
+    setName('');
+    setFoundUser(null);
+    setProfileImage(null);
+    setCategory(defaultCategory || 'Friends');
+  } catch (error) {
+    console.error("[DEBUG] Error in handleSubmit:", error);
+    Alert.alert('Error', 'Failed to add member');
+  } finally {
+    setSaving(false);
   }
+}
+  
+// Add this function to MyCircleScreen.tsx
+async function testNotificationCreation() {
+  if (!currentUserId) return;
+  
+  try {
+    console.log("[TEST] Starting notification creation test");
+    
+    // Get a test user (you can hardcode a real user ID here)
+    const testUserId = "REAL_USER_ID_HERE"; // Replace with a real user ID
+    
+    // Create a test notification
+    const notificationsRef = collection(db, 'users', testUserId, 'notifications');
+    const testNotification = {
+      type: 'circle_invitation',
+      fromUserId: currentUserId,
+      fromUserName: 'Test User',
+      fromUserPhone: '1234567890',
+      category: 'Friends' as CircleCategory,
+      status: 'pending' as const,
+      createdAt: Timestamp.now(),
+      message: 'Test invitation message',
+    };
+    
+    const docRef = await addDoc(notificationsRef, testNotification);
+    console.log("[TEST] Notification created successfully with ID:", docRef.id);
+    Alert.alert("Success", "Test notification created successfully");
+  } catch (error) {
+    console.error("[TEST ERROR] Failed to create test notification:", error);
+    Alert.alert("Error", "Failed to create test notification");
+  }
+}
+
+
 
   const categories: CircleCategory[] = ['Sibling', 'Friends', 'Family', 'Emergency', 'Other'];
 
@@ -621,7 +684,6 @@ function AddMemberModal({
           </View>
 
           <ScrollView style={styles.modalBody}>
-            {/* Profile Picture */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Profile Picture</Text>
               <TouchableOpacity 
@@ -639,7 +701,6 @@ function AddMemberModal({
               </TouchableOpacity>
             </View>
 
-            {/* Mobile Number */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Mobile Number</Text>
               <View style={styles.phoneInputRow}>
@@ -678,19 +739,16 @@ function AddMemberModal({
               )}
             </View>
 
-            {/* Name */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Name</Text>
               <TextInput
-                style={[styles.input, foundUser && styles.inputDisabled]}
+                style={styles.input}
                 value={name}
                 onChangeText={setName}
                 placeholder="Enter name"
-                editable={!foundUser}
               />
             </View>
 
-            {/* Category */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Category</Text>
               <View style={styles.categoryGrid}>
@@ -718,6 +776,7 @@ function AddMemberModal({
           </ScrollView>
 
           <View style={styles.modalFooter}>
+
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -730,12 +789,49 @@ function AddMemberModal({
                 {saving ? 'Adding...' : 'Add Member'}
               </Text>
             </TouchableOpacity>
+
+            
+
+
           </View>
         </View>
       </View>
     </Modal>
   );
 }
+
+// NEW STYLES for status badges
+const statusBadgeStyles = {
+  memberStatusRow: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    marginTop: 4,
+  },
+  pendingBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  pendingText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '500',
+  },
+  acceptedBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  acceptedText: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '500',
+  },
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -796,6 +892,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 60,
   },
+  // Add to styles
+loadingOverlay: {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 1000,
+},
   loadingText: {
     marginTop: 12,
     color: '#6B7280',
@@ -954,6 +1062,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginBottom: 4,
   },
+  memberStatusRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
   registeredBadge: {
     backgroundColor: '#ECFDF5',
     paddingHorizontal: 8,
@@ -962,6 +1075,30 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   registeredText: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '500',
+  },
+  pendingBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  pendingText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '500',
+  },
+  acceptedBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  acceptedText: {
     fontSize: 11,
     color: '#059669',
     fontWeight: '500',

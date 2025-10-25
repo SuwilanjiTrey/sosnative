@@ -1,13 +1,14 @@
 // app/(tabs)/dashboard.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Image, ScrollView, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
 import SOSButton from '../components/SOSButton';
 import { useAuth } from '../../hooks/useAuth';
 import { StyledText } from '../../components/StyledText';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Audio } from 'expo-av';
 
 type CircleCategory = 'Sibling' | 'Friends' | 'Family' | 'Emergency' | 'Other';
 
@@ -19,13 +20,23 @@ type CircleData = {
   initials: string[];
 };
 
+type Notification = {
+  id: string;
+  type: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: any;
+};
+
 export default function DashboardScreen() {
   const { user } = useAuth();
   const [userData, setUserData] = useState<any>(null);
   const [circles, setCircles] = useState<CircleData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const router = useRouter();
+  const lastNotificationCount = useRef(0);
 
+  // Fetch user data
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user) return;
@@ -43,59 +54,115 @@ export default function DashboardScreen() {
     fetchUserData();
   }, [user]);
 
+  // Set up real-time listener for circles
   useEffect(() => {
-    const fetchCircles = async () => {
-      if (!user) return;
+    if (!user) return;
 
-      setLoading(true);
-      try {
-        const circlesRef = collection(db, 'users', user.uid, 'circles');
-        const snapshot = await getDocs(circlesRef);
-        
-        // Group circles by category
-        const groupedByCategory: Record<CircleCategory, any[]> = {
-          Sibling: [],
-          Friends: [],
-          Family: [],
-          Emergency: [],
-          Other: [],
-        };
+    const circlesRef = collection(db, 'users', user.uid, 'circles');
+    const unsubscribe = onSnapshot(circlesRef, (snapshot) => {
+      // Group circles by category
+      const groupedByCategory: Record<CircleCategory, any[]> = {
+        Sibling: [],
+        Friends: [],
+        Family: [],
+        Emergency: [],
+        Other: [],
+      };
 
-        snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          const category: CircleCategory = data.category || 'Other';
-          groupedByCategory[category].push({
-            ...data,
-            id: doc.id,
-          });
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const category: CircleCategory = data.category || 'Other';
+        groupedByCategory[category].push({
+          ...data,
+          id: doc.id,
+        });
+      });
+
+      // Transform grouped data into circle cards
+      const circleCards: CircleData[] = Object.entries(groupedByCategory)
+        .filter(([_, members]) => members.length > 0)
+        .map(([category, members]) => {
+          const firstThree = members.slice(0, 3);
+          return {
+            id: category,
+            category: category as CircleCategory,
+            memberCount: members.length,
+            avatars: firstThree
+              .map(member => member.profilePictureBase64),
+            initials: firstThree
+              .map(member => member.name.charAt(0).toUpperCase()),
+          };
         });
 
-        // Transform grouped data into circle cards
-        const circleCards: CircleData[] = Object.entries(groupedByCategory)
-          .filter(([_, members]) => members.length > 0)
-          .map(([category, members]) => {
-            const firstThree = members.slice(0, 3);
-            return {
-              id: category,
-              category: category as CircleCategory,
-              memberCount: members.length,
-              avatars: firstThree
-                .map(member => member.profilePictureBase64),
-              initials: firstThree
-                .map(member => member.name.charAt(0).toUpperCase()),
-            };
-          });
+      setCircles(circleCards);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error listening to circles:', error);
+      setLoading(false);
+    });
 
-        setCircles(circleCards);
+    return () => unsubscribe();
+  }, [user]);
+
+  // Set up real-time listener for notifications
+  useEffect(() => {
+    if (!user) return;
+
+    const notificationsRef = collection(db, 'users', user.uid, 'notifications');
+    const q = query(notificationsRef, where('status', '==', 'pending'), orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const count = snapshot.size;
+      setUnreadNotifications(count);
+      
+      // Play sound if new notifications arrived
+      if (count > lastNotificationCount.current) {
+        playNotificationSound();
+      }
+      
+      lastNotificationCount.current = count;
+    }, (error) => {
+      console.error('Error listening to notifications:', error);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    const setupAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+        });
       } catch (error) {
-        console.error('Error fetching circles:', error);
-      } finally {
-        setLoading(false);
+        console.error('Error setting up audio:', error);
       }
     };
+  
+    setupAudio();
+  }, []);
+  
 
-    fetchCircles();
-  }, [user]);
+
+  // Function to play notification sound
+  const playNotificationSound = async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/sounds/notification-chime.mp3')
+      );
+      await sound.playAsync();
+      
+      // Clean up sound after playing
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+    } catch (error) {
+      console.error('Error playing sound:', error);
+    }
+  };
 
   const getImageSource = () => {
     if (userData?.profilePictureBase64) {
@@ -131,15 +198,23 @@ export default function DashboardScreen() {
             <View style={styles.premiumBadgeSmall}>
               <Ionicons name="shield-checkmark" size={14} color="#4caf50" />
               <Text style={styles.premiumTextSmall}>
-                
                 {userData?.isPremium ? 'Premium user' : 'Basic Plan'}
-                
-                </Text>
+              </Text>
             </View>
           </View>
         </View>
-        <TouchableOpacity style={styles.notificationButton}>
+        <TouchableOpacity 
+          onPress={() => router.push('../components/notification')}
+          style={styles.notificationButton}
+        >
           <Ionicons name="notifications-outline" size={24} color="#333" />
+          {unreadNotifications > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {unreadNotifications > 99 ? '99+' : unreadNotifications}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -262,6 +337,23 @@ const styles = StyleSheet.create({
   notificationButton: {
     padding: 8,
   },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#d32f2f',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -356,7 +448,6 @@ const styles = StyleSheet.create({
   avatarsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 'auto',
   },
   circleAvatar: {
     width: 32,

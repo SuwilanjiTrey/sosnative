@@ -1,4 +1,4 @@
-// app/auth/register.tsx
+// app/auth/register-responder.tsx
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -8,16 +8,18 @@ import { doc, setDoc } from 'firebase/firestore';
 import { StyledText } from '../../components/StyledText';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function RegisterScreen() {
-  const [name, setName] = useState('');
+export default function RegisterResponderScreen() {
+  const [institutionName, setInstitutionName] = useState('');
+  const [branch, setBranch] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [contactInfo, setContactInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleRegister = async () => {
-    if (!name || !email || !password) {
+    if (!institutionName || !branch || !email || !password || !contactInfo) {
       Alert.alert("Missing Fields", "Please fill all fields.");
       return;
     }
@@ -34,27 +36,32 @@ export default function RegisterScreen() {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Create user document in Firestore
-      await setDoc(doc(db, "users", user.uid), {
-        name,
+      // Create responder document in Firestore
+      await setDoc(doc(db, "Responders", user.uid), {
+        institutionName,
+        branch,
         email,
+        contactInfo,
         createdAt: new Date(),
-        lastActiveAt: new Date(),
-        isPremium: false,
-        isResponder: false,
-        settings: { 
-          emailFallback: true, 
-          smsFallback: false,
-          location: true,
-          camera: false,
-          audio: false,
-          photo: false
-        },
-        fcmTokens: {}
+        // Default location - will be updated later
+        location: {
+          latitude: 0,
+          longitude: 0
+        }
       });
 
-      // Redirect to phone verification page
-      router.replace('/auth/phone');
+      // Redirect to responder dashboard
+      Alert.alert(
+        "Registration Successful!",
+        "Your emergency institution account has been created.",
+        [
+          {
+            text: "Continue",
+            onPress: () => router.replace('/responder/dashboard'),
+            style: "default"
+          }
+        ]
+      );
     } catch (error: any) {
       console.error("Registration error:", error);
       
@@ -92,15 +99,26 @@ export default function RegisterScreen() {
         />
 
         <StyledText type="title" style={styles.title}>
-          Create Account
+          Register as Emergency Institution
         </StyledText>
 
         <View style={styles.inputContainer}>
-          <Text style={styles.label}>Full Name</Text>
+          <Text style={styles.label}>Institution Name</Text>
           <TextInput
-            placeholder="Enter your full name"
-            value={name}
-            onChangeText={setName}
+            placeholder="Enter institution name"
+            value={institutionName}
+            onChangeText={setInstitutionName}
+            style={styles.input}
+            editable={!loading}
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Branch</Text>
+          <TextInput
+            placeholder="Enter branch name"
+            value={branch}
+            onChangeText={setBranch}
             style={styles.input}
             editable={!loading}
           />
@@ -143,6 +161,17 @@ export default function RegisterScreen() {
           </View>
         </View>
 
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Contact Information</Text>
+          <TextInput
+            placeholder="Enter contact information"
+            value={contactInfo}
+            onChangeText={setContactInfo}
+            style={styles.input}
+            editable={!loading}
+          />
+        </View>
+
         <TouchableOpacity 
           style={[styles.button, loading && styles.buttonDisabled]} 
           onPress={handleRegister}
@@ -159,14 +188,6 @@ export default function RegisterScreen() {
           disabled={loading}
         >
           <Text style={styles.loginText}>Already have an account? Login</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          onPress={() => router.push('/auth/register-responder')} 
-          style={styles.loginLink}
-          disabled={loading}
-        >
-          <Text style={styles.loginText}>Register as a Responder Institution</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

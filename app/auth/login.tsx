@@ -1,14 +1,17 @@
 // app/auth/login.tsx
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { auth } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { StyledText } from '../../components/StyledText';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -21,19 +24,42 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
       
-      Alert.alert(
-        "Welcome Back!",
-        "You've successfully logged in!",
-        [
-          {
-            text: "Continue",
-            onPress: () => router.replace('/(tabs)/dashboard'),
-            style: "default"
-          }
-        ]
-      );
+      // Check if user is a responder
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      const isResponder = userDoc.exists() && userDoc.data().isResponder;
+      
+      // Check if user exists in Responders collection
+      const responderQuery = await getDoc(doc(db, "Responders", user.uid));
+      const isInstitutionResponder = responderQuery.exists();
+      
+      if (isResponder || isInstitutionResponder) {
+        Alert.alert(
+          "Welcome Responder!",
+          "You've successfully logged in as a responder!",
+          [
+            {
+              text: "Continue",
+              onPress: () => router.replace('/responder/dashboard'),
+              style: "default"
+            }
+          ]
+        );
+      } else {
+        Alert.alert(
+          "Welcome Back!",
+          "You've successfully logged in!",
+          [
+            {
+              text: "Continue",
+              onPress: () => router.replace('/(tabs)/dashboard'),
+              style: "default"
+            }
+          ]
+        );
+      }
     } catch (error: any) {
       console.error("Login error:", error);
       
@@ -54,72 +80,103 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      {/* App Logo */}
-      <Image
-        source={require('../../assets/images/icon.png')}
-        style={styles.logo}
-        resizeMode="contain"
-      />
-
-      <StyledText type="title" style={styles.title}>
-        Welcome Back
-      </StyledText>
-      <Text style={styles.subtitle}>Sign in to continue to SafeCircle</Text>
-
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          placeholder="Enter your email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          style={styles.input}
-          editable={!loading}
-        />
-      </View>
-
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          placeholder="Enter your password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-          editable={!loading}
-        />
-      </View>
-
-      <TouchableOpacity 
-        style={[styles.button, loading && styles.buttonDisabled]} 
-        onPress={handleLogin}
-        disabled={loading}
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.buttonText}>
-          {loading ? 'Logging In...' : 'Login'}
-        </Text>
-      </TouchableOpacity>
+        {/* App Logo */}
+        <Image
+          source={require('../../assets/images/icon.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
 
-      <TouchableOpacity 
-        onPress={() => router.push('/auth/register')} 
-        style={styles.registerLink}
-        disabled={loading}
-      >
-        <Text style={styles.registerText}>Don't have an account? Register</Text>
-      </TouchableOpacity>
+        <StyledText type="title" style={styles.title}>
+          Welcome Back
+        </StyledText>
+        <Text style={styles.subtitle}>Sign in to continue to SafeCircle</Text>
 
-      
-    </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            placeholder="Enter your email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            style={styles.input}
+            editable={!loading}
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              placeholder="Enter your password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              style={styles.passwordInput}
+              editable={!loading}
+            />
+            <TouchableOpacity 
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Ionicons 
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
+                size={24} 
+                color="#666" 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.button, loading && styles.buttonDisabled]} 
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText}>
+            {loading ? 'Logging In...' : 'Login'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          onPress={() => router.push('/auth/register')} 
+          style={styles.registerLink}
+          disabled={loading}
+        >
+          <Text style={styles.registerText}>Don't have an account? Register</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          onPress={() => router.push('/auth/register-responder')} 
+          style={styles.registerLink}
+          disabled={loading}
+        >
+          <Text style={styles.registerText}>Register as a Responder Institution</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
+  },
+  scrollContent: {
+    flexGrow: 1,
     padding: 20,
     justifyContent: 'center',
-    backgroundColor: '#fff',
   },
   logo: {
     width: 80,
@@ -154,6 +211,21 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
   },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 15,
+    fontSize: 16,
+  },
+  eyeIcon: {
+    padding: 15,
+  },
   button: {
     backgroundColor: '#d32f2f',
     padding: 18,
@@ -182,12 +254,5 @@ const styles = StyleSheet.create({
     color: '#2196f3',
     fontSize: 16,
     fontWeight: '500',
-  },
-  devNote: {
-    marginTop: 30,
-    fontSize: 12,
-    color: '#888',
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
 });
