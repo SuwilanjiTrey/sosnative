@@ -44,6 +44,8 @@ app-example
 firebase-debug.log
 firebase-debug.*.log
 
+firebaseConfig.ts
+
 # Functions
 functions/node_modules/
 functions/.env
