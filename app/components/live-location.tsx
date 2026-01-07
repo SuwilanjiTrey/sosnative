@@ -1,8 +1,8 @@
-// app/live-location.tsx
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform, ScrollView, RefreshControl } from 'react-native';
+// app/components/live-location.tsx
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,Image, Platform, ScrollView, RefreshControl, Linking } from 'react-native';
 import { useState, useEffect } from 'react';
 import { WebView } from 'react-native-webview';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyledText } from '../../components/StyledText';
 import { auth, db } from '../../firebaseConfig';
@@ -23,6 +23,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { getCurrentLocation } from '../utils/location';
+import React from 'react';
 
 // Define types
 type CircleMember = {
@@ -33,7 +34,7 @@ type CircleMember = {
   isRegistered: boolean;
   status: 'pending' | 'accepted' | 'rejected';
   profilePictureBase64?: string;
-  userId?: string; // Add userId to link to recorded_locations
+  userId?: string;
 };
 
 type RecordedLocation = {
@@ -57,8 +58,24 @@ type NearbyService = {
   phone: string;
 };
 
+type UserData = {
+  name?: string;
+  isPremium?: boolean;
+  profilePictureBase64?: string;
+  [key: string]: any; // Allow for other properties
+};
+
 export default function LiveLocationScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  
+  // Extract parameters for SOS emergency viewing
+  const focusUserId = params.focusUserId as string | undefined;
+  const focusUserName = params.focusUserName as string | undefined;
+  const focusLat = params.focusLat ? parseFloat(params.focusLat as string) : undefined;
+  const focusLng = params.focusLng ? parseFloat(params.focusLng as string) : undefined;
+  const isEmergencyView = params.isEmergency === 'true';
+  
   const [isRecording, setIsRecording] = useState(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
@@ -69,67 +86,117 @@ export default function LiveLocationScreen() {
   const [isPremium, setIsPremium] = useState(false);
   const [loadingServices, setLoadingServices] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+  const [userData, setUserData] = useState<UserData | null>(null);
+
+  const AUTO_UPDATE_INTERVAL = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+  // Debug logging for parameters
+  useEffect(() => {
+    console.log('LiveLocationScreen initialized with params:', {
+      focusUserId,
+      focusUserName,
+      focusLat,
+      focusLng,
+      isEmergencyView
+    });
+    setInitialized(true);
+  }, []);
 
   // Get user's premium status and circle members on component mount
   useEffect(() => {
+    if (!initialized) return;
+    
     const fetchUserData = async () => {
-      if (!auth.currentUser) return;
+      if (!auth.currentUser) {
+        console.log("No authenticated user found");
+        setLoadingLocation(false);
+        return;
+      }
       
       try {
-        // Get user data to check premium status
+        console.log("Fetching user data for:", auth.currentUser.uid);
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
+          setUserData(userData);
           setIsPremium(userData.isPremium || false);
+          console.log("User premium status:", userData.isPremium);
         }
         
         await fetchCircleMembersAndLocations();
       } catch (error) {
         console.error("Error fetching user data:", error);
-      }
-    };
-  
-    fetchUserData();
-  }, []);
-
-  // Track user location and update/create record
-  useEffect(() => {
-    const trackUserLocation = async () => {
-      if (!auth.currentUser?.uid) return;
-      
-      try {
-        const location = await getCurrentLocation();
-        
-        if (!location) {
-          Alert.alert("Error", "Could not get your current location");
-          return;
-        }
-  
-        setUserLocation({ lat: location.lat, lng: location.lng });
-  
-        // Update or create location record for current user
-        await updateUserLocationRecord(location.lat, location.lng, location.accuracy ?? 0);
-        
-        console.log("Location tracked successfully");
-        
-        // Refresh circle members and their locations
-        await fetchCircleMembersAndLocations();
-        
-        // If premium, fetch nearby services
-        if (isPremium) {
-          fetchNearbyServices(location.lat, location.lng);
-        }
-      } catch (error) {
-        console.error("Error tracking location:", error);
-      } finally {
         setLoadingLocation(false);
       }
     };
   
-    trackUserLocation();
-  }, [isPremium]);
+    fetchUserData();
+  }, [initialized]);
 
-  // Update or create user location record
+  // Initial location tracking on mount (non-emergency)
+  useEffect(() => {
+    if (!initialized || isEmergencyView) return;
+    
+    updateLocation(); // Initial update
+  }, [initialized, isEmergencyView]);
+
+  // Auto-update every 30 minutes while screen is active (non-emergency)
+  useEffect(() => {
+    if (!initialized || isEmergencyView) return;
+
+    const intervalId = setInterval(() => {
+      updateLocation();
+    }, AUTO_UPDATE_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [initialized, isEmergencyView, isPremium, userLocation]); // Dependencies to re-setup if needed
+
+  // Emergency view setup
+  useEffect(() => {
+    if (isEmergencyView && focusLat && focusLng) {
+      console.log("Emergency view detected, setting location from params");
+      setUserLocation({ lat: focusLat, lng: focusLng });
+      setLoadingLocation(false);
+      
+      // Still fetch circle members to show on map
+      fetchCircleMembersAndLocations();
+    }
+  }, [isEmergencyView, focusLat, focusLng]);
+
+  // Function to update location, Firestore, and related data
+  const updateLocation = async () => {
+    if (!auth.currentUser?.uid) return;
+
+    try {
+      console.log("Getting current location...");
+      const location = await getCurrentLocation();
+      
+      if (!location) {
+        Alert.alert("Error", "Could not get your current location");
+        return;
+      }
+
+      setUserLocation({ lat: location.lat, lng: location.lng });
+      console.log("Location set to:", location);
+
+      await updateUserLocationRecord(location.lat, location.lng, location.accuracy ?? 0);
+      
+      console.log("Location tracked successfully");
+      
+      await fetchCircleMembersAndLocations();
+      
+      if (isPremium) {
+        fetchNearbyServices(location.lat, location.lng);
+      }
+    } catch (error) {
+      console.error("Error updating location:", error);
+      Alert.alert("Error", "Failed to update location. Please check permissions and try again.");
+    } finally {
+      setLoadingLocation(false);
+    }
+  };
+
   const updateUserLocationRecord = async (lat: number, lng: number, accuracy: number | null) => {
     if (!auth.currentUser?.uid) return;
 
@@ -143,7 +210,6 @@ export default function LiveLocationScreen() {
         createdAt: new Date().toISOString()
       };
 
-      // Check if user already has a location record
       const locationsQuery = query(
         collection(db, 'recorded_locations'),
         where('userId', '==', auth.currentUser.uid),
@@ -154,12 +220,10 @@ export default function LiveLocationScreen() {
       const locationsSnapshot = await getDocs(locationsQuery);
 
       if (!locationsSnapshot.empty) {
-        // Update existing record
         const docRef = locationsSnapshot.docs[0].ref;
         await updateDoc(docRef, locationData);
         console.log("Updated existing location record");
       } else {
-        // Create new record
         await addDoc(collection(db, 'recorded_locations'), locationData);
         console.log("Created new location record");
       }
@@ -168,14 +232,12 @@ export default function LiveLocationScreen() {
     }
   };
 
-  // Fetch circle members and their locations
   const fetchCircleMembersAndLocations = async () => {
     if (!auth.currentUser?.uid) return;
     
     try {
       console.log("Fetching circle members for user:", auth.currentUser.uid);
       
-      // Fetch circle members
       const circlesRef = collection(db, 'users', auth.currentUser.uid, 'circles');
       const circlesSnapshot = await getDocs(circlesRef);
       
@@ -205,11 +267,9 @@ export default function LiveLocationScreen() {
       console.log("Processed members:", members.length);
       setCircleMembers(members);
       
-      // Now fetch user IDs for these phone numbers from users collection
       if (members.length > 0) {
         const userIdsMap: Record<string, string> = {};
         
-        // Query users collection to match phone numbers to UIDs
         const usersRef = collection(db, 'users');
         const usersSnapshot = await getDocs(usersRef);
         
@@ -222,7 +282,6 @@ export default function LiveLocationScreen() {
         
         console.log("User IDs map:", userIdsMap);
         
-        // Update members with their UIDs
         const membersWithIds = members.map(member => ({
           ...member,
           userId: userIdsMap[member.mobileNumber]
@@ -230,13 +289,11 @@ export default function LiveLocationScreen() {
         
         setCircleMembers(membersWithIds);
         
-        // Fetch locations for users who have UIDs
         const validUserIds = Object.values(userIdsMap).filter(id => id);
         
         if (validUserIds.length > 0) {
           console.log("Fetching locations for user IDs:", validUserIds);
           
-          // Firestore 'in' queries are limited to 10 items, so we need to batch
           const batches = [];
           for (let i = 0; i < validUserIds.length; i += 10) {
             const batch = validUserIds.slice(i, i + 10);
@@ -250,7 +307,6 @@ export default function LiveLocationScreen() {
           
           const allSnapshots = await Promise.all(batches);
           
-          // Get latest location per user
           const latestLocations: Record<string, RecordedLocation> = {};
           
           allSnapshots.forEach(snapshot => {
@@ -283,14 +339,11 @@ export default function LiveLocationScreen() {
     }
   };
 
-  // Fetch nearby services (mock data - replace with real API)
   const fetchNearbyServices = async (lat: number, lng: number) => {
     if (!isPremium) return;
     
     setLoadingServices(true);
     try {
-      // Mock data for nearby emergency services
-      // In production, use Google Places API or similar
       const mockServices: NearbyService[] = [
         {
           id: '1',
@@ -342,245 +395,231 @@ export default function LiveLocationScreen() {
     }
   };
 
-  // Generate HTML for the map with proper icons
-  const generateMapHTML = () => {
-    const centerLat = userLocation?.lat || -15.3875;
-    const centerLon = userLocation?.lng || 28.3228;
-    
-    // Filter members based on selected category
-    const filteredMembers = selectedCategory 
-      ? circleMembers.filter(m => m.category === selectedCategory)
-      : circleMembers;
-    
-    // Get locations for filtered members
-    const filteredLocations = memberLocations.filter(loc => 
-      filteredMembers.some(m => m.userId === loc.userId)
-    );
-    
-    // Define marker type
-    type MapMarker = {
-      lat: number;
-      lng: number;
-      name: string;
-      color: string;
-      icon: string;
-      type: string;
-      category?: string;
-      phone?: string;
-      address?: string;
-      distance?: number;
-    };
-    
-    // Create markers array
-    const allMarkers: MapMarker[] = [
-      ...(userLocation ? [{
-        lat: userLocation.lat,
-        lng: userLocation.lng,
-        name: 'You',
-        color: '#d32f2f',
-        icon: '📍',
-        type: 'user'
-      }] : []),
-      ...filteredLocations.map(location => {
-        const member = circleMembers.find(m => m.userId === location.userId);
-        return {
-          lat: location.latitude,
-          lng: location.longitude,
-          name: member ? member.name : 'Unknown',
-          color: '#2196f3',
-          icon: '👤',
-          type: 'member',
-          category: member?.category || 'Unknown'
-        };
-      }),
-      ...(isPremium ? nearbyServices.map(service => ({
-        lat: service.latitude,
-        lng: service.longitude,
-        name: service.name,
-        color: service.type === 'police' ? '#4CAF50' : 
-               service.type === 'hospital' ? '#F44336' : '#FF9800',
-        icon: service.type === 'police' ? '🚓' : 
-              service.type === 'hospital' ? '🏥' : '🚒',
-        type: service.type,
-        phone: service.phone,
-        address: service.address,
-        distance: service.distance
-      })) : [])
-    ];
-
-    const markersJS = allMarkers.map((marker, index) => `
-      L.marker([${marker.lat}, ${marker.lng}], {
-        icon: L.divIcon({
-          className: 'custom-marker',
-          html: \`
-            <div style="
-              position: relative;
-              width: 40px;
-              height: 50px;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-            ">
-              <div style="
-                background-color: ${marker.color};
-                width: 35px;
-                height: 35px;
-                border-radius: 50% 50% 50% 0;
-                transform: rotate(-45deg);
-                border: 3px solid white;
-                box-shadow: 0 3px 8px rgba(0,0,0,0.4);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-              ">
-                <span style="
-                  transform: rotate(45deg);
-                  font-size: 18px;
-                  line-height: 1;
-                ">${marker.icon}</span>
-              </div>
-              <div style="
-                background: white;
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-size: 10px;
-                font-weight: bold;
-                color: #333;
-                margin-top: 2px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                white-space: nowrap;
-                max-width: 80px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-              ">${marker.name}</div>
-            </div>
-          \`,
-          iconSize: [40, 50],
-          iconAnchor: [20, 50]
-        })
-      }).addTo(map).bindPopup(
-        '<div style="min-width: 200px;">' +
-          '<h3 style="margin: 0 0 8px 0; font-size: 16px;">${marker.icon} ${marker.name}</h3>' +
-          '<p style="margin: 4px 0; font-size: 12px; color: #666;"><strong>Type:</strong> ${marker.type}</p>' +
-          ${marker.category ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #666;\"><strong>Category:</strong> ${marker.category}</p>'" : "''"} +
-          ${marker.phone ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #666;\"><strong>Phone:</strong> ${marker.phone}</p>'" : "''"} +
-          ${marker.address ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #666;\"><strong>Address:</strong> ${marker.address}</p>'" : "''"} +
-          ${marker.distance ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #2196f3;\"><strong>Distance:</strong> ${marker.distance}m away</p>'" : "''"} +
-          '<p style="margin: 4px 0; font-size: 11px; color: #999;">${marker.lat.toFixed(6)}, ${marker.lng.toFixed(6)}</p>' +
-        '</div>'
-      );
-    `).join('\n');
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <style>
-          body { margin: 0; padding: 0; }
-          #map { height: 100vh; width: 100vw; }
-          .custom-marker { background: transparent; border: none; }
-          .leaflet-popup-content-wrapper {
-            border-radius: 8px;
-          }
-          .leaflet-popup-content {
-            margin: 12px;
-          }
-        </style>
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map').setView([${centerLat}, ${centerLon}], 13);
-          
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-          }).addTo(map);
-
-          ${markersJS}
-
-          ${allMarkers.length > 0 ? `
-          // Fit bounds to show all markers
-          var bounds = L.latLngBounds([
-            ${allMarkers.map(m => `[${m.lat}, ${m.lng}]`).join(',\n            ')}
-          ]);
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
-          ` : ''}
-        </script>
-      </body>
-      </html>
-    `;
+// Modify the generateMapHTML function to accept userData as a parameter
+const generateMapHTML = (userData?: any) => {
+  // Determine map center based on context
+  let centerLat: number;
+  let centerLon: number;
+  
+  if (isEmergencyView && focusLat && focusLng) {
+    // Center on emergency location
+    centerLat = focusLat;
+    centerLon = focusLng;
+  } else if (userLocation) {
+    // Center on user location
+    centerLat = userLocation.lat;
+    centerLon = userLocation.lng;
+  } else {
+    // Default center
+    centerLat = -15.3875;
+    centerLon = 28.3228;
+  }
+  
+  const filteredMembers = selectedCategory 
+    ? circleMembers.filter(m => m.category === selectedCategory)
+    : circleMembers;
+  
+  const filteredLocations = memberLocations.filter(loc => 
+    filteredMembers.some(m => m.userId === loc.userId)
+  );
+  
+  type MapMarker = {
+    lat: number;
+    lng: number;
+    name: string;
+    color: string;
+    icon: string;
+    type: string;
+    category?: string;
+    phone?: string;
+    address?: string;
+    distance?: number;
+    isEmergency?: boolean;
+    profilePicture?: string;
   };
+  
+  const allMarkers: MapMarker[] = [];
+  
+  // Add emergency location if viewing an SOS alert
+  if (isEmergencyView && focusLat && focusLng) {
+    allMarkers.push({
+      lat: focusLat,
+      lng: focusLng,
+      name: focusUserName || 'Emergency Alert',
+      color: '#dc2626',
+      icon: '🚨',
+      type: 'emergency',
+      isEmergency: true
+    });
+  }
+  
+  // Add current user location with profile picture
+  if (userLocation && !isEmergencyView) {
+    allMarkers.push({
+      lat: userLocation.lat,
+      lng: userLocation.lng,
+      name: 'You',
+      color: '#d32f2f',
+      icon: '📍',
+      type: 'user',
+      profilePicture: userData?.profilePictureBase64 // Use the passed userData parameter
+    });
+  }
+  
+  // Add circle member locations with profile pictures
+  allMarkers.push(...filteredLocations.map(location => {
+    const member = circleMembers.find(m => m.userId === location.userId);
+    return {
+      lat: location.latitude,
+      lng: location.longitude,
+      name: member ? member.name : 'Unknown',
+      color: '#2196f3',
+      icon: '👤',
+      type: 'member',
+      category: member?.category || 'Unknown',
+      profilePicture: member?.profilePictureBase64
+    };
+  }));
+  
+  // Add nearby services for premium users
+  if (isPremium) {
+    allMarkers.push(...nearbyServices.map(service => ({
+      lat: service.latitude,
+      lng: service.longitude,
+      name: service.name,
+      color: service.type === 'police' ? '#4CAF50' : 
+             service.type === 'hospital' ? '#F44336' : '#FF9800',
+      icon: service.type === 'police' ? '🚓' : 
+            service.type === 'hospital' ? '🏥' : '🚒',
+      type: service.type,
+      phone: service.phone,
+      address: service.address,
+      distance: service.distance
+    })));
+  }
+
+  const markersJS = allMarkers.map((marker, index) => `
+    L.marker([${marker.lat}, ${marker.lng}], {
+      icon: L.divIcon({
+        className: 'custom-marker',
+        html: \`
+          <div style="
+            position: relative;
+            width: ${marker.isEmergency ? '50px' : '45px'};
+            height: ${marker.isEmergency ? '60px' : '55px'};
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            ${marker.isEmergency ? 'animation: pulse 1.5s ease-in-out infinite;' : ''}
+          ">
+            <div style="
+              background-color: ${marker.color};
+              width: ${marker.isEmergency ? '45px' : '40px'};
+              height: ${marker.isEmergency ? '45px' : '40px'};
+              border-radius: 50%;
+              transform: rotate(-45deg);
+              border: 3px solid white;
+              box-shadow: 0 ${marker.isEmergency ? '4px 12px' : '3px 8px'} rgba(0,0,0,${marker.isEmergency ? '0.5' : '0.4'});
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              overflow: hidden;
+            ">
+              ${marker.profilePicture ? 
+                `<img src="${marker.profilePicture}" style="width: 100%; height: 100%; object-fit: cover; transform: rotate(45deg);" />` :
+                `<span style="transform: rotate(45deg); font-size: ${marker.isEmergency ? '22px' : '18px'}; line-height: 1;">${marker.icon}</span>`
+              }
+            </div>
+            <div style="
+              background: ${marker.isEmergency ? '#dc2626' : 'white'};
+              color: ${marker.isEmergency ? 'white' : '#333'};
+              padding: 2px 6px;
+              border-radius: 4px;
+              font-size: ${marker.isEmergency ? '11px' : '10px'};
+              font-weight: bold;
+              margin-top: 2px;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+              white-space: nowrap;
+              max-width: 100px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            ">${marker.name}</div>
+          </div>
+        \`,
+        iconSize: [${marker.isEmergency ? '50' : '45'}, ${marker.isEmergency ? '60' : '55'}],
+        iconAnchor: [${marker.isEmergency ? '25' : '22'}, ${marker.isEmergency ? '60' : '55'}]
+      })
+    }).addTo(map).bindPopup(
+      '<div style="min-width: 200px;">' +
+        '<h3 style="margin: 0 0 8px 0; font-size: 16px; color: ${marker.isEmergency ? '#dc2626' : '#333'};">${marker.icon} ${marker.name}</h3>' +
+        ${marker.isEmergency ? "'<p style=\"margin: 4px 0; font-size: 13px; color: #dc2626; font-weight: bold;\">⚠️ EMERGENCY ALERT</p>'" : "''"} +
+        '<p style="margin: 4px 0; font-size: 12px; color: #666;"><strong>Type:</strong> ${marker.type}</p>' +
+        ${marker.category ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #666;\"><strong>Category:</strong> ${marker.category}</p>'" : "''"} +
+        ${marker.phone ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #666;\"><strong>Phone:</strong> ${marker.phone}</p>'" : "''"} +
+        ${marker.address ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #666;\"><strong>Address:</strong> ${marker.address}</p>'" : "''"} +
+        ${marker.distance ? "'<p style=\"margin: 4px 0; font-size: 12px; color: #2196f3;\"><strong>Distance:</strong> ${marker.distance}m away</p>'" : "''"} +
+        '<p style="margin: 4px 0; font-size: 11px; color: #999;">${marker.lat.toFixed(6)}, ${marker.lng.toFixed(6)}</p>' +
+      '</div>'
+    )${marker.isEmergency ? '.openPopup()' : ''};
+  `).join('\n');
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <style>
+        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100vw; }
+        .custom-marker { background: transparent; border: none; }
+        .leaflet-popup-content-wrapper {
+          border-radius: 8px;
+        }
+        .leaflet-popup-content {
+          margin: 12px;
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.1); opacity: 0.8; }
+        }
+      </style>
+    </head>
+    <body>
+      <div id="map"></div>
+      <script>
+        var map = L.map('map').setView([${centerLat}, ${centerLon}], ${isEmergencyView ? 15 : 13});
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
+        }).addTo(map);
+
+        ${markersJS}
+
+        ${allMarkers.length > 0 ? `
+        var bounds = L.latLngBounds([
+          ${allMarkers.map(m => `[${m.lat}, ${m.lng}]`).join(',\n            ')}
+        ]);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: ${isEmergencyView ? 15 : 15} });
+        ` : ''}
+      </script>
+    </body>
+    </html>
+  `;
+};
 
   const handleRecordLocation = async () => {
-    if (!auth.currentUser?.uid) {
-      Alert.alert("Error", "You must be logged in to record location");
-      return;
-    }
-  
     setIsRecording(true);
-    
-    try {
-      const location = await getCurrentLocation();
-      
-      if (!location) {
-        Alert.alert("Error", "Could not get your current location");
-        return;
-      }
-  
-      setUserLocation({ lat: location.lat, lng: location.lng });
-      
-      await updateUserLocationRecord(location.lat, location.lng, location.accuracy ?? 0);
-      
-      // Refresh circle members and their locations
-      await fetchCircleMembersAndLocations();
-      
-      // If premium, refresh nearby services
-      if (isPremium) {
-        fetchNearbyServices(location.lat, location.lng);
-      }
-      
-      Alert.alert(
-        "Success",
-        `Location updated successfully!\n\nLat: ${location.lat.toFixed(6)}\nLng: ${location.lng.toFixed(6)}`,
-        [{ text: "OK" }]
-      );
-    } catch (error) {
-      console.error("Error recording location:", error);
-      Alert.alert("Error", "Failed to record location. Please try again.");
-    } finally {
-      setIsRecording(false);
-    }
+    await updateLocation(); // Reuse the update function
+    setIsRecording(false);
   };
   
   const onRefresh = async () => {
     setRefreshing(true);
-    
-    try {
-      const location = await getCurrentLocation();
-      if (location) {
-        setUserLocation({ lat: location.lat, lng: location.lng });
-        
-        if (auth.currentUser?.uid) {
-          await updateUserLocationRecord(location.lat, location.lng, location.accuracy ?? 0);
-        }
-      }
-      
-      await fetchCircleMembersAndLocations();
-      
-      if (isPremium && location) {
-        fetchNearbyServices(location.lat, location.lng);
-      }
-      
-    } catch (error) {
-      console.error("Error refreshing location:", error);
-      Alert.alert("Error", "Failed to refresh location");
-    } finally {
-      setRefreshing(false);
-    }
+    await updateLocation();
+    setRefreshing(false);
   };
 
   const renderMapView = () => {
@@ -589,17 +628,21 @@ export default function LiveLocationScreen() {
         <View style={styles.mapContainer}>
           <View style={styles.mapLoading}>
             <ActivityIndicator size="large" color="#d32f2f" />
-            <Text style={styles.mapLoadingText}>Getting your location...</Text>
+            <Text style={styles.mapLoadingText}>Getting location...</Text>
           </View>
         </View>
       );
     }
 
+    const mapHtml = generateMapHTML(userData);
+    const mapKey = userLocation ? `${userLocation.lat}-${userLocation.lng}` : 'default'; // Key to force re-render
+
     if (Platform.OS === 'web') {
       return (
         <View style={styles.mapContainer}>
           <iframe
-            srcDoc={generateMapHTML()}
+            key={mapKey}
+            srcDoc={mapHtml}
             style={styles.mapIframe}
             title="Live Location Map"
             frameBorder="0"
@@ -607,29 +650,31 @@ export default function LiveLocationScreen() {
             allowFullScreen
           />
           
-          {/* Locate Me Button for Web */}
-          <TouchableOpacity 
-            style={styles.locateMeButton}
-            onPress={handleRecordLocation}
-            disabled={isRecording}
-          >
-            {isRecording ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="navigate" size={18} color="#fff" />
-                <Text style={styles.locateMeText}>Locate Me</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {!isEmergencyView && (
+            <TouchableOpacity 
+              style={styles.locateMeButton}
+              onPress={handleRecordLocation}
+              disabled={isRecording}
+            >
+              {isRecording ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="navigate" size={18} color="#fff" />
+                  <Text style={styles.locateMeText}>Locate Me</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       );
     } else {
       return (
         <View style={styles.mapContainer}>
           <WebView
+            key={mapKey}
             originWhitelist={['*']}
-            source={{ html: generateMapHTML() }}
+            source={{ html: mapHtml }}
             style={styles.webView}
             javaScriptEnabled={true}
             domStorageEnabled={true}
@@ -641,80 +686,99 @@ export default function LiveLocationScreen() {
             )}
           />
           
-          <TouchableOpacity 
-            style={styles.locateMeButton}
-            onPress={handleRecordLocation}
-            disabled={isRecording}
-          >
-            {isRecording ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="navigate" size={18} color="#fff" />
-                <Text style={styles.locateMeText}>Locate Me</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-         
+          {!isEmergencyView && (
+            <TouchableOpacity 
+              style={styles.locateMeButton}
+              onPress={handleRecordLocation}
+              disabled={isRecording}
+            >
+              {isRecording ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="navigate" size={18} color="#fff" />
+                  <Text style={styles.locateMeText}>Locate Me</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
   };
 
-  const renderCircleCards = () => {
-    const groupedMembers = circleMembers.reduce((acc, member) => {
-      if (!acc[member.category]) acc[member.category] = [];
-      acc[member.category].push(member);
-      return acc;
-    }, {} as Record<string, CircleMember[]>);
+const renderCircleCards = () => {
+  const groupedMembers = circleMembers.reduce((acc, member) => {
+    if (!acc[member.category]) acc[member.category] = [];
+    acc[member.category].push(member);
+    return acc;
+  }, {} as Record<string, CircleMember[]>);
 
-    return Object.entries(groupedMembers).map(([category, members]) => {
-      // Count how many members have locations
-      const membersWithLocations = members.filter(m => 
-        memberLocations.some(loc => loc.userId === m.userId)
-      ).length;
+  return (
+    <ScrollView 
+      horizontal 
+      showsHorizontalScrollIndicator={false}
+      style={styles.circlesScrollView}
+    >
+      {Object.entries(groupedMembers).map(([category, members]) => {
+        const membersWithLocations = members.filter(m => 
+          memberLocations.some(loc => loc.userId === m.userId)
+        ).length;
 
-      return (
-        <TouchableOpacity 
-          key={category} 
-          style={[
-            styles.circleCard, 
-            selectedCategory === category && styles.circleCardSelected
-          ]}
-          onPress={() => setSelectedCategory(selectedCategory === category ? null : category)}
-        >
-          <View style={styles.circleHeader}>
-            <Text style={styles.circleName}>{category}</Text>
-            <Text style={styles.circleMembers}>
-              {members.length} Members • {membersWithLocations} with location
-            </Text>
-          </View>
-          <View style={styles.avatarsRow}>
-            {members.slice(0, 3).map((member) => (
-              <View key={member.id} style={[
-                styles.avatar,
-                memberLocations.some(loc => loc.userId === member.userId) && styles.avatarActive
-              ]}>
-                <Text style={styles.avatarText}>{member.name.charAt(0)}</Text>
-              </View>
-            ))}
-            {members.length > 3 && (
-              <View style={styles.avatarMoreBadge}>
-                <Text style={styles.avatarMoreText}>+{members.length - 3}</Text>
+        return (
+          <TouchableOpacity 
+            key={category} 
+            style={[
+              styles.circleCard, 
+              selectedCategory === category && styles.circleCardSelected
+            ]}
+            onPress={() => setSelectedCategory(selectedCategory === category ? null : category)}
+          >
+            <View style={styles.circleHeader}>
+              <Text style={styles.circleName}>{category}</Text>
+              <Text style={styles.circleMembers}>
+                {members.length} Members • {membersWithLocations} with location
+              </Text>
+            </View>
+            
+            <View style={styles.avatarsRow}>
+              {members.slice(0, 5).map((member) => {
+                const hasLocation = memberLocations.some(loc => loc.userId === member.userId);
+                return (
+                  <View key={member.id} style={[
+                    styles.avatar,
+                    hasLocation && styles.avatarActive
+                  ]}>
+                    {member.profilePictureBase64 ? (
+                      <Image
+                        source={{ uri: member.profilePictureBase64 }}
+                        style={styles.avatarImage}
+                      />
+                    ) : (
+                      <Text style={styles.avatarText}>{member.name.charAt(0)}</Text>
+                    )}
+                  </View>
+                );
+              })}
+              {members.length > 5 && (
+                <View style={styles.avatarMoreBadge}>
+                  <Text style={styles.avatarMoreText}>+{members.length - 5}</Text>
+                </View>
+              )}
+            </View>
+            
+            {selectedCategory === category && (
+              <View style={styles.selectedIndicator}>
+                <Ionicons name="checkmark-circle" size={20} color="#d32f2f" />
+                <Text style={styles.selectedText}>Showing on map</Text>
               </View>
             )}
-          </View>
-          {selectedCategory === category && (
-            <View style={styles.selectedIndicator}>
-              <Ionicons name="checkmark-circle" size={20} color="#d32f2f" />
-              <Text style={styles.selectedText}>Showing on map</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      );
-    });
-  };
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+};
 
   const renderNearbyServices = () => {
     if (!isPremium) return null;
@@ -761,99 +825,158 @@ export default function LiveLocationScreen() {
     );
   };
 
+  // If not initialized yet, show loading
+  if (!initialized) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Live Location</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#d32f2f" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, isEmergencyView && styles.emergencyHeader]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={28} color="#333" />
+          <Ionicons name="chevron-back" size={28} color={isEmergencyView ? "#fff" : "#333"} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Live Location</Text>
-        <TouchableOpacity onPress={onRefresh} style={styles.refreshButton} disabled={refreshing}>
-          <Ionicons 
-            name="refresh" 
-            size={24} 
-            color={refreshing ? "#ccc" : "#2196f3"} 
-          />
-        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, isEmergencyView && styles.emergencyHeaderTitle]}>
+            {isEmergencyView ? '🚨 Emergency Location' : 'Live Location'}
+          </Text>
+          {isEmergencyView && focusUserName && (
+            <Text style={styles.emergencySubtitle}>{focusUserName} needs help!</Text>
+          )}
+        </View>
+        {!isEmergencyView && (
+          <TouchableOpacity onPress={onRefresh} style={styles.refreshButton} disabled={refreshing}>
+            <Ionicons 
+              name="refresh" 
+              size={24} 
+              color={refreshing ? "#ccc" : "#2196f3"} 
+            />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView 
         style={styles.scrollView}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#d32f2f']}
-            tintColor="#d32f2f"
-            title="Pull to refresh location..."
-            titleColor="#666"
-          />
+          !isEmergencyView ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#d32f2f']}
+              tintColor="#d32f2f"
+              title="Pull to refresh location..."
+              titleColor="#666"
+            />
+          ) : undefined
         }
       >
         <View style={styles.mapSection}>
           {renderMapView()}
         </View>
 
-        <View style={styles.contentSection}>
-          {isPremium && (
-            <View style={styles.premiumBadge}>
-              <Ionicons name="diamond" size={16} color="#FFD700" />
-              <Text style={styles.premiumText}>Premium User</Text>
-            </View>
-          )}
-
-          <Text style={styles.subtitle}>
-            {isPremium 
-              ? "View your circle members and nearby emergency services" 
-              : "Select a circle category to view member locations"}
-          </Text>
-
-          <View style={styles.circlesSection}>
-            {circleMembers.length > 0 ? (
-              renderCircleCards()
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={48} color="#ccc" />
-                <Text style={styles.noMembersText}>No circle members found</Text>
-                <Text style={styles.noMembersSubtext}>
-                  Add members to your circle to see their locations
+        {isEmergencyView && (
+          <View style={styles.emergencyBanner}>
+            <View style={styles.emergencyBannerContent}>
+              <Ionicons name="alert-circle" size={32} color="#dc2626" />
+              <View style={styles.emergencyBannerText}>
+                <Text style={styles.emergencyBannerTitle}>Emergency Alert Active</Text>
+                <Text style={styles.emergencyBannerSubtitle}>
+                  {focusUserName || 'A member'} has triggered an SOS alert
                 </Text>
               </View>
+            </View>
+            
+            {focusLat && focusLng && (
+              <TouchableOpacity 
+                style={styles.getDirectionsButton}
+                onPress={() => {
+                  const url = `https://www.google.com/maps/dir/?api=1&destination=${focusLat},${focusLng}`;
+                  Linking.openURL(url).catch(err => {
+                    console.error("Error opening maps:", err);
+                    Alert.alert("Error", "Could not open maps");
+                  });
+                }}
+              >
+                <Ionicons name="navigate" size={20} color="#fff" />
+                <Text style={styles.getDirectionsText}>Get Directions</Text>
+              </TouchableOpacity>
             )}
           </View>
+        )}
 
-          {renderNearbyServices()}
+        {!isEmergencyView && (
+            
+            <View style={styles.contentSection}>
+              {isPremium && (
+                <View style={styles.premiumBadge}>
+                  <Ionicons name="diamond" size={16} color="#FFD700" />
+                  <Text style={styles.premiumText}>Premium User</Text>
+                </View>
+              )}
 
-          <TouchableOpacity 
-            style={[styles.sosButton, !isPremium && styles.sosButtonDisabled]}
-            onPress={() => {
-              if (isPremium) {
-                Alert.alert(
-                  "SOS Emergency",
-                  "Are you sure you want to send an emergency alert to your circle and nearby services?",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Send Alert", style: "destructive", onPress: () => console.log("SOS alert sent") }
-                  ]
-                );
-              } else {
-                Alert.alert(
-                  "Premium Feature",
-                  "Upgrade to Premium to use SOS Emergency alerts",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Upgrade", onPress: () => router.push('./premium') }
-                  ]
-                );
-              }
-            }}
-          >
-            <Ionicons name="alert-circle" size={24} color="#fff" />
-            <Text style={styles.sosButtonText}>
-              {isPremium ? "SOS Emergency" : "Upgrade for SOS"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+              <Text style={styles.subtitle}>
+                {isPremium 
+                  ? "View your circle members and nearby emergency services" 
+                  : "Select a circle category to view member locations"}
+              </Text>
+
+              <View style={styles.circlesSection}>
+                {circleMembers.length > 0 ? (
+                  renderCircleCards()
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="people-outline" size={48} color="#ccc" />
+                    <Text style={styles.noMembersText}>No circle members found</Text>
+                    <Text style={styles.noMembersSubtext}>
+                      Add members to your circle to see their locations
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {renderNearbyServices()}
+
+              <TouchableOpacity 
+                style={[styles.sosButton, !isPremium && styles.sosButtonDisabled]}
+                onPress={() => {
+                  if (isPremium) {
+                    Alert.alert(
+                      "SOS Emergency",
+                      "Are you sure you want to send an emergency alert to your circle and nearby services?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Send Alert", style: "destructive", onPress: () => console.log("SOS alert sent") }
+                      ]
+                    );
+                  } else {
+                    Alert.alert(
+                      "Premium Feature",
+                      "Upgrade to Premium to use SOS Emergency alerts",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Upgrade", onPress: () => router.push('./premium') }
+                      ]
+                    );
+                  }
+                }}
+              >
+                <Ionicons name="alert-circle" size={24} color="#fff" />
+                <Text style={styles.sosButtonText}>
+                  {isPremium ? "SOS Emergency" : "Upgrade for SOS"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -874,13 +997,30 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
     backgroundColor: '#fff',
   },
+  emergencyHeader: {
+    backgroundColor: '#dc2626',
+    borderBottomColor: '#b91c1c',
+  },
   backButton: {
     padding: 4,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
+  },
+  emergencyHeaderTitle: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  emergencySubtitle: {
+    fontSize: 12,
+    color: '#fee2e2',
+    marginTop: 2,
   },
   refreshButton: {
     padding: 4,
@@ -915,21 +1055,16 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
   },
-  backButtonOverlay: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#fff',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6B7280',
+    fontSize: 14,
   },
   locateMeButton: {
     position: 'absolute',
@@ -953,6 +1088,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+  },
+  emergencyBanner: {
+    backgroundColor: '#fee2e2',
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2626',
+  },
+  emergencyBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  emergencyBannerText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  emergencyBannerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#7f1d1d',
+    marginBottom: 4,
+  },
+  emergencyBannerSubtitle: {
+    fontSize: 13,
+    color: '#991b1b',
+  },
+  getDirectionsButton: {
+    backgroundColor: '#dc2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  getDirectionsText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   contentSection: {
     padding: 20,
@@ -979,16 +1157,21 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 20,
   },
+  circlesScrollView: {
+    marginBottom: 16,
+  },
   circlesSection: {
     marginBottom: 24,
   },
   circleCard: {
+    width: 180,
     backgroundColor: '#f8f8f8',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginRight: 12,
     borderWidth: 2,
     borderColor: 'transparent',
+    minHeight: 140,
   },
   circleCardSelected: {
     borderColor: '#d32f2f',
@@ -1012,50 +1195,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
   },
-  avatarsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#e0e0e0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  avatarActive: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
-  },
-  avatarText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  avatarMoreBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#e3f2fd',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  avatarMoreText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2196f3',
-  },
   selectedIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
   },
@@ -1065,6 +1210,55 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontWeight: '500',
   },
+avatarsRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+},
+avatar: {
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  backgroundColor: '#e0e0e0',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 8,
+  marginBottom: 8,
+  borderWidth: 2,
+  borderColor: '#fff',
+},
+avatarActive: {
+  backgroundColor: '#4CAF50',
+  borderColor: '#4CAF50',
+},
+avatarImage: {
+  width: '100%',
+  height: '100%',
+  borderRadius: 18,
+},
+avatarText: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#fff',
+},
+avatarMoreBadge: {
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  backgroundColor: '#e3f2fd',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 8,
+  marginBottom: 8,
+  borderWidth: 2,
+  borderColor: '#fff',
+},
+avatarMoreText: {
+  fontSize: 12,
+  fontWeight: '600',
+  color: '#2196f3',
+},
+
   emptyState: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -1166,4 +1360,51 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+
+// Add these new styles to your StyleSheet object
+circlesHBox: {
+  flexDirection: 'row',
+  paddingHorizontal: 16,
+  marginBottom: 16,
+},
+circleCardContainer: {
+  flex: 1,
+  marginRight: 12,
+  backgroundColor: '#f8f8f8',
+  borderRadius: 16,
+  borderWidth: 2,
+  borderColor: 'transparent',
+  maxHeight: 200,
+},
+circleCardHeader: {
+  padding: 12,
+  borderBottomWidth: 1,
+  borderBottomColor: '#eee',
+},
+
+circleMembersScrollView: {
+  flex: 1,
+},
+circleMembersContainer: {
+  padding: 8,
+},
+memberItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingVertical: 8,
+  paddingHorizontal: 4,
+  borderBottomWidth: 1,
+  borderBottomColor: '#f0f0f0',
+},
+
+memberName: {
+  flex: 1,
+  fontSize: 14,
+  color: '#333',
+},
+locationIndicator: {
+  marginLeft: 8,
+},
+
+
 });

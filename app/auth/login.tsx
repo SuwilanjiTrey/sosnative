@@ -7,6 +7,7 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { StyledText } from '../../components/StyledText';
 import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -42,7 +43,7 @@ export default function LoginScreen() {
           [
             {
               text: "Continue",
-              onPress: () => router.replace('/responder/dashboard'),
+              onPress: () => router.replace('/responder/r-dashboard'),
               style: "default"
             }
           ]
@@ -80,91 +81,98 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* App Logo */}
-        <Image
-          source={require('../../assets/images/icon.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-
-        <StyledText type="title" style={styles.title}>
-          Welcome Back
-        </StyledText>
-        <Text style={styles.subtitle}>Sign in to continue to SafeCircle</Text>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            style={styles.input}
-            editable={!loading}
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+        >
+          {/* App Logo */}
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
           />
-        </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordContainer}>
+          <StyledText type="title" style={styles.title}>
+            Welcome Back
+          </StyledText>
+          <Text style={styles.subtitle}>Sign in to continue to SafeCircle</Text>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Email</Text>
             <TextInput
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              style={styles.passwordInput}
+              placeholder="Enter your email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              style={styles.input}
               editable={!loading}
             />
-            <TouchableOpacity 
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <Ionicons 
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
-                size={24} 
-                color="#666" 
-              />
-            </TouchableOpacity>
           </View>
-        </View>
 
-        <TouchableOpacity 
-          style={[styles.button, loading && styles.buttonDisabled]} 
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>
-            {loading ? 'Logging In...' : 'Login'}
-          </Text>
-        </TouchableOpacity>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                placeholder="Enter your password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                style={styles.passwordInput}
+                editable={!loading}
+              />
+              <TouchableOpacity 
+                style={styles.eyeIcon}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons 
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'} 
+                  size={24} 
+                  color="#666" 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
 
-        <TouchableOpacity 
-          onPress={() => router.push('/auth/register')} 
-          style={styles.registerLink}
-          disabled={loading}
-        >
-          <Text style={styles.registerText}>Don't have an account? Register</Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.button, loading && styles.buttonDisabled]} 
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? 'Logging In...' : 'Login'}
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          onPress={() => router.push('/auth/register-responder')} 
-          style={styles.registerLink}
-          disabled={loading}
-        >
-          <Text style={styles.registerText}>Register as a Responder Institution</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <TouchableOpacity 
+            onPress={() => router.push('/auth/register')} 
+            style={styles.registerLink}
+            disabled={loading}
+          >
+            <Text style={styles.registerText}>Don't have an account? Register</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={() => router.push('/auth/register-responder')} 
+            style={styles.registerLink}
+            disabled={loading}
+          >
+            <Text style={styles.registerText}>Register as a Responder Institution</Text>
+          </TouchableOpacity>
+
+          <View style={styles.versionContainer}>
+            <Text style={styles.version}>Version 2.4</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -173,10 +181,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  keyboardView: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     padding: 20,
-    justifyContent: 'center',
+    paddingTop: 60, // Space from top
+    paddingBottom: 40, // Space from bottom
   },
   logo: {
     width: 80,
@@ -210,6 +222,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 15,
     fontSize: 16,
+    backgroundColor: '#fff',
   },
   passwordContainer: {
     flexDirection: 'row',
@@ -217,6 +230,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 12,
+    backgroundColor: '#fff',
   },
   passwordInput: {
     flex: 1,
@@ -253,6 +267,16 @@ const styles = StyleSheet.create({
   registerText: {
     color: '#2196f3',
     fontSize: 16,
+    fontWeight: '500',
+  },
+  versionContainer: {
+    marginTop: 30,
+    alignItems: 'center',
+  },
+  version: {
+    color: '#999',
+    fontSize: 12,
+    textAlign: 'center',
     fontWeight: '500',
   },
 });

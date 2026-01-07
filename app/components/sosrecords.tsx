@@ -11,29 +11,16 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
-import { initializeApp } from 'firebase/app';
-import {
-  getFirestore,
-  collection,
-  doc,
-  getDocs,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * SOSRecordsScreen.tsx
  * --------------------
  * React Native implementation showing all SOS records made by the user
  * 
- * Firebase Structure:
- * users/{userId}/
- *   records/{recordId}/
- *     - circle, title, timestamp, status, location, notifiedMembers, media, notes, etc.
+ * Local Storage Structure:
+ * AsyncStorage 'sosRecords' : JSON array of records
+ *   - id, circle, title, timestamp, status, location, notifiedMembers, media, notes, etc.
  */
 
 // Types
@@ -60,7 +47,6 @@ type LocationObj = {
 
 type RecordItem = {
   id: string;
-  userId: string;
   circle: string;
   title: string;
   timestamp: string;
@@ -75,21 +61,12 @@ type RecordItem = {
 };
 
 
-// Firebase Service
+// Local Service
 class RecordsService {
-  static async fetchUserRecords(userId: string): Promise<RecordItem[]> {
+  static async fetchUserRecords(): Promise<RecordItem[]> {
     try {
-      const recordsRef = collection(db, 'users', userId, 'records');
-      const q = query(recordsRef, orderBy('timestamp', 'desc'));
-      const snapshot = await getDocs(q);
-      
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || doc.data().timestamp,
-        createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || doc.data().createdAt,
-        updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || doc.data().updatedAt,
-      })) as RecordItem[];
+      const savedRecords = await AsyncStorage.getItem('sosRecords');
+      return savedRecords ? JSON.parse(savedRecords) : [];
     } catch (error) {
       console.error('Error fetching records:', error);
       throw error;
@@ -97,16 +74,16 @@ class RecordsService {
   }
 
   static async updateRecordStatus(
-    userId: string,
     recordId: string,
     status: Status
   ): Promise<void> {
     try {
-      const recordRef = doc(db, 'users', userId, 'records', recordId);
-      await updateDoc(recordRef, {
-        status,
-        updatedAt: Timestamp.now(),
-      });
+      const savedRecords = await AsyncStorage.getItem('sosRecords');
+      let records = savedRecords ? JSON.parse(savedRecords) : [];
+      records = records.map((record: RecordItem) => 
+        record.id === recordId ? { ...record, status, updatedAt: new Date().toISOString() } : record
+      );
+      await AsyncStorage.setItem('sosRecords', JSON.stringify(records));
     } catch (error) {
       console.error('Error updating status:', error);
       throw error;
@@ -165,8 +142,6 @@ export default function SOSRecordsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<RecordItem | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
-  
-  const currentUserId = 'user_202302738'; // Replace with actual auth user ID
 
   useEffect(() => {
     loadRecords();
@@ -175,7 +150,7 @@ export default function SOSRecordsScreen() {
   async function loadRecords() {
     setLoading(true);
     try {
-      const data = await RecordsService.fetchUserRecords(currentUserId);
+      const data = await RecordsService.fetchUserRecords();
       setRecords(data);
     } catch (error) {
       console.error('Failed to load records:', error);
@@ -205,7 +180,7 @@ export default function SOSRecordsScreen() {
           onPress: async () => {
             setUpdatingStatus(true);
             try {
-              await RecordsService.updateRecordStatus(currentUserId, record.id, 'safe');
+              await RecordsService.updateRecordStatus(record.id, 'safe');
               const updated = { ...record, status: 'safe' as Status, updatedAt: new Date().toISOString() };
               setRecords(prev => prev.map(r => r.id === record.id ? updated : r));
               setSelectedRecord(updated);

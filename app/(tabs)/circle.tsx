@@ -30,6 +30,7 @@ import {
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseService, CircleMember, CircleCategory, UserProfile } from '../auth/firebaseService'; // Import the service
 import { db } from '../../firebaseConfig';
+import { Ionicons } from '@expo/vector-icons';
 
 // Add this helper function to your utilities file or at the top of your component
 export function normalizePhoneNumber(phoneNumber: string): string {
@@ -302,13 +303,13 @@ useEffect(() => {
                       style={styles.callButtonSmall}
                       onPress={() => handleCallMember(member)}
                     >
-                      <Text style={styles.callIconSmall}>📞</Text>
+                      <Ionicons name="call" size={28} color="#333" />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.removeButton}
                       onPress={() => handleRemoveMember(member.id)}
                     >
-                      <Text style={styles.removeIcon}>🗑️</Text>
+                      <Ionicons name="trash-outline" size={28} color="#333" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -360,7 +361,9 @@ useEffect(() => {
           <Text style={styles.headerSubtitle}>{circles.length} total members</Text>
         </View>
         <TouchableOpacity style={styles.searchButton}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          
+        <Ionicons name={"people-outline"} size={28} />
+       
         </TouchableOpacity>
       </View>
 

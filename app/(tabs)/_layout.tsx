@@ -3,20 +3,21 @@ import { Tabs } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { auth } from '../../firebaseConfig';
 import { useEffect, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; // <-- Import this
 
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
 
 export default function TabsLayout() {
   const [user, setUser] = useState<any>(null);
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // <-- Get the safe area insets
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(setUser);
     return () => unsubscribe();
   }, []);
-
-
 
   return (
     <Tabs
@@ -24,14 +25,19 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: '#d32f2f',
         tabBarInactiveTintColor: '#999',
-        tabBarShowLabel: false, // Hide labels, show only icons
+        tabBarShowLabel: false,
+        // --- Update the tabBarStyle ---
         tabBarStyle: {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#eee',
-          height: 65,
-          paddingBottom: 10,
-          paddingTop: 20,
+          // Set the height to a base value plus the bottom inset
+          height: 60 + insets.bottom, 
+          // Add padding to the bottom equal to the safe area inset
+          paddingBottom: insets.bottom, 
+          // Adjust other padding for a better look
+          paddingTop: 10, 
+          paddingHorizontal: 5,
         },
       }}
     >
@@ -55,7 +61,6 @@ export default function TabsLayout() {
         }} 
       />
 
-
       <Tabs.Screen 
         name="record" 
         options={{ 
@@ -65,8 +70,6 @@ export default function TabsLayout() {
           ),
         }} 
       />
-
-
       
       <Tabs.Screen 
         name="profile" 

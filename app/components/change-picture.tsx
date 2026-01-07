@@ -10,21 +10,30 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
+  Dimensions
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { Camera } from 'expo-camera';
-import { auth, db } from '../../firebaseConfig'; // Adjust path to your firebase config
+import { auth, db } from '../../firebaseConfig';
 import { doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { signOut, deleteUser } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
+import { useProfile } from '../contexts/ProfileContext';
+import * as ImageManipulator from 'expo-image-manipulator';
+
+const { width } = Dimensions.get('window');
 
 export default function ProfileManagementScreen() {
   const router = useRouter();
+  const { updateProfilePicture, updateProfileName } = useProfile();
   const [loading, setLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   // User data
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
@@ -53,7 +62,12 @@ export default function ProfileManagementScreen() {
         setName(data.name || '');
         setMobileNumber(data.mobileNumber || '');
         setEmail(data.email || user.email || '');
-        setProfilePicture(data.profilePictureBase64 || null);
+        
+        // Just use the data as-is from Firestore
+        const profilePic = data.profilePictureBase64 || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+        
+        setProfilePicture(profilePic);
+        updateProfilePicture(profilePic);
         setTempName(data.name || '');
         setTempMobile(data.mobileNumber || '');
       }
@@ -65,10 +79,28 @@ export default function ProfileManagementScreen() {
 
   const convertImageToBase64 = async (uri: string): Promise<string> => {
     try {
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      return `data:image/jpeg;base64,${base64}`;
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64data = reader.result as string;
+            // Return the FULL data URI with prefix for storage
+            resolve(base64data);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        // Mobile: Use FileSystem and add prefix
+        const base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        // Return WITH the data URI prefix
+        return `data:image/jpeg;base64,${base64}`;
+      }
     } catch (error) {
       console.error('Error converting to base64:', error);
       throw error;
@@ -85,13 +117,13 @@ export default function ProfileManagementScreen() {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
+      allowsEditing: false, // We'll handle cropping ourselves
+      quality: 1,
     });
 
     if (!result.canceled && result.assets[0]) {
-      await uploadProfilePicture(result.assets[0].uri);
+      setSelectedImage(result.assets[0].uri);
+      setShowCropModal(true);
     }
   };
 
@@ -106,13 +138,41 @@ export default function ProfileManagementScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
+      allowsEditing: false, // We'll handle cropping ourselves
+      quality: 1,
     });
 
     if (!result.canceled && result.assets[0]) {
-      await uploadProfilePicture(result.assets[0].uri);
+      setSelectedImage(result.assets[0].uri);
+      setShowCropModal(true);
+    }
+  };
+
+  const handleCropAndUpload = async () => {
+    if (!selectedImage) return;
+
+    try {
+      setLoading(true);
+      setShowCropModal(false);
+
+      // Crop and resize the image
+      const manipResult = await ImageManipulator.manipulateAsync(
+        selectedImage,
+        [
+          { resize: { width: 400 } }, // Resize to reasonable size
+        ],
+        { 
+          compress: 0.7, 
+          format: ImageManipulator.SaveFormat.JPEG 
+        }
+      );
+
+      await uploadProfilePicture(manipResult.uri);
+      setSelectedImage(null);
+    } catch (error) {
+      console.error('Error cropping image:', error);
+      Alert.alert('Error', 'Failed to process image');
+      setLoading(false);
     }
   };
 
@@ -125,17 +185,20 @@ export default function ProfileManagementScreen() {
         return;
       }
 
-      // Convert to base64
-      const base64Image = await convertImageToBase64(imageUri);
+      // Convert to base64 WITH the data URI prefix
+      const base64ImageWithPrefix = await convertImageToBase64(imageUri);
 
-      // Update Firestore
+      // Update Firestore with the FULL data URI (including prefix)
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, {
-        profilePictureBase64: base64Image,
+        profilePictureBase64: base64ImageWithPrefix, // Store WITH prefix
         updatedAt: new Date(),
       });
 
-      setProfilePicture(base64Image);
+      // Update local state and context
+      setProfilePicture(base64ImageWithPrefix);
+      updateProfilePicture(base64ImageWithPrefix);
+      
       Alert.alert('Success', 'Profile picture updated successfully!');
     } catch (error) {
       console.error('Error uploading profile picture:', error);
@@ -143,6 +206,44 @@ export default function ProfileManagementScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRemoveProfilePicture = async () => {
+    Alert.alert(
+      'Remove Profile Picture',
+      'Are you sure you want to remove your profile picture?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const user = auth.currentUser;
+              if (!user) return;
+
+              const userRef = doc(db, 'users', user.uid);
+              await updateDoc(userRef, {
+                profilePictureBase64: null,
+                updatedAt: new Date(),
+              });
+
+              // Update local state and context
+              setProfilePicture(null);
+              updateProfilePicture('https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face');
+              
+              Alert.alert('Success', 'Profile picture removed successfully!');
+            } catch (error) {
+              console.error('Error removing profile picture:', error);
+              Alert.alert('Error', 'Failed to remove profile picture');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSaveName = async () => {
@@ -163,6 +264,7 @@ export default function ProfileManagementScreen() {
       });
 
       setName(tempName.trim());
+      updateProfileName(tempName.trim());
       setIsEditingName(false);
       Alert.alert('Success', 'Name updated successfully!');
     } catch (error) {
@@ -200,8 +302,6 @@ export default function ProfileManagementScreen() {
       setLoading(false);
     }
   };
-
-
 
   const handleDeleteAccount = async () => {
     Alert.alert(
@@ -286,6 +386,15 @@ export default function ProfileManagementScreen() {
             <Ionicons name="camera" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
+        {profilePicture && (
+          <TouchableOpacity
+            style={styles.removePictureButton}
+            onPress={handleRemoveProfilePicture}
+          >
+            <Ionicons name="trash-outline" size={16} color="#ff4444" />
+            <Text style={styles.removePictureText}>Remove Picture</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Name Section */}
@@ -388,8 +497,6 @@ export default function ProfileManagementScreen() {
 
       {/* Account Actions */}
       <View style={styles.actionsSection}>
-
-
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={handleDeleteAccount}
@@ -429,6 +536,56 @@ export default function ProfileManagementScreen() {
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Crop/Preview Modal */}
+      <Modal
+        visible={showCropModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowCropModal(false);
+          setSelectedImage(null);
+        }}
+      >
+        <View style={styles.cropModalOverlay}>
+          <View style={styles.cropModalContent}>
+            <Text style={styles.cropModalTitle}>Adjust Your Photo</Text>
+            
+            {selectedImage && (
+              <View style={styles.imagePreviewContainer}>
+                <Image 
+                  source={{ uri: selectedImage }} 
+                  style={styles.imagePreview}
+                  resizeMode="cover"
+                />
+              </View>
+            )}
+
+            <Text style={styles.cropModalHint}>
+              Your photo will be automatically cropped to fit
+            </Text>
+
+            <View style={styles.cropModalButtons}>
+              <TouchableOpacity
+                style={styles.cropCancelButton}
+                onPress={() => {
+                  setShowCropModal(false);
+                  setSelectedImage(null);
+                }}
+              >
+                <Text style={styles.cropCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cropConfirmButton}
+                onPress={handleCropAndUpload}
+              >
+                <Ionicons name="checkmark" size={20} color="#fff" />
+                <Text style={styles.cropConfirmText}>Use Photo</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -556,6 +713,23 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#fff',
   },
+  removePictureButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ff4444',
+    width: '100%',
+  },
+  removePictureText: {
+    color: '#ff4444',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   fieldHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -613,23 +787,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 16,
     marginBottom: 30,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#007AFF',
-  },
-  logoutButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#007AFF',
-    marginLeft: 8,
   },
   deleteButton: {
     flexDirection: 'row',
@@ -690,6 +847,77 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#666',
     fontWeight: '600',
+  },
+  cropModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cropModalContent: {
+    width: width - 40,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  cropModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
+  },
+  imagePreviewContainer: {
+    width: width - 80,
+    height: width - 80,
+    borderRadius: (width - 80) / 2,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 3,
+    borderColor: '#007AFF',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  cropModalHint: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  cropModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  cropCancelButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  cropCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  cropConfirmButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  cropConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
   deleteModalOverlay: {
     flex: 1,

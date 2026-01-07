@@ -1,120 +1,353 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+// app/components/payment-gateway.tsx
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useAuth } from '../../hooks/useAuth';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { WebView } from 'react-native-webview';
 import { db } from '../../firebaseConfig';
-import { doc, updateDoc } from 'firebase/firestore';
+import { useAuth } from '../../hooks/useAuth';
+import {getDoc} from 'firebase/firestore';
+
+const BACKEND_URL = 'https://safecircle-production.up.railway.app';
 
 export default function PaymentGatewayScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+
   const { planId, amount, planName } = useLocalSearchParams();
-  
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiryMonth, setExpiryMonth] = useState('');
-  const [expiryYear, setExpiryYear] = useState('');
-  const [cvv, setCvv] = useState('');
-  const [cardholderName, setCardholderName] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const webviewRef = useRef<WebView>(null);
 
-  const formatCardNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    const formatted = cleaned.replace(/(\d{4})(?=\d)/g, '$1 ');
-    return formatted.substring(0, 19);
-  };
+  // Keep track of which page we've seen
+  const hasSeenSuccessRef = useRef(false);
+  const hasSeenCancelRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(null);
 
-  const formatExpiry = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length >= 2) {
-      return `${cleaned.substring(0, 2)}/${cleaned.substring(2, 4)}`;
-    }
-    return cleaned;
-  };
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
 
-  const validateCard = () => {
-    const cardDigits = cardNumber.replace(/\s/g, '');
-    
-    if (cardDigits.length !== 16) {
-      Alert.alert('Invalid Card', 'Card number must be 16 digits');
-      return false;
-    }
-    
-    if (!expiryMonth || !expiryYear || expiryMonth.length !== 2 || expiryYear.length !== 2) {
-      Alert.alert('Invalid Expiry', 'Please enter valid expiry date (MM/YY)');
-      return false;
-    }
-    
-    if (cvv.length !== 3) {
-      Alert.alert('Invalid CVV', 'CVV must be 3 digits');
-      return false;
-    }
-    
-    if (!cardholderName.trim()) {
-      Alert.alert('Invalid Name', 'Please enter cardholder name');
-      return false;
-    }
-    
-    return true;
-  };
+  const isWeb = Platform.OS === 'web';
 
-  const handlePayment = async () => {
-    if (!validateCard()) return;
-    
-    setIsProcessing(true);
-    
-    try {
-      // Simulate payment processing delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Update user document to set isPremium to true
-      if (user) {
-        await updateDoc(doc(db, 'users', user.uid), {
-          isPremium: true,
-          premiumPlan: planId,
-          premiumStartDate: new Date(),
-          lastPaymentAmount: amount,
-          lastPaymentDate: new Date()
-        });
+  const { user } = useAuth();
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // First, fetch user data
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!user) {
+        //addDebugLog('⏳ Waiting for user authentication...');
+        return;
       }
       
-      // Success alert and navigation
+      try {
+        //addDebugLog('🔍 Fetching user data...');
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUserData(userDoc.data());
+          //addDebugLog('✅ User data loaded');
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        //addDebugLog(`❌ Error fetching user data: ${error.message}`);
+      } finally {
+        setIsInitialized(true);
+      }
+    };
+
+    fetchUserData();
+  }, [user]);
+
+  console.log("heres the users information: ", userData);
+
+  // Then, create checkout session only after user data is loaded
+  useEffect(() => {
+    // Don't proceed until initialization is complete
+    if (!isInitialized) {
+      return;
+    }
+
+    ////addDebugLog('🟢 Initialization complete, validating...');
+    //addDebugLog(`User: ${user?.uid || 'NOT AUTHENTICATED'}`);
+    //addDebugLog(`Plan: ${planName}, Amount: ${amount}`);
+    
+    if (!user) {
+      //addDebugLog('❌ No user found after initialization - aborting');
+      Alert.alert('Error', 'User not authenticated', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+      return;
+    }
+
+    if (!amount || !planId || !planName) {
+      //addDebugLog('❌ Missing required parameters');
+      Alert.alert('Error', 'Missing payment information', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+      return;
+    }
+
+    createCheckoutSession();
+  }, [isInitialized, user?.uid, planId, amount, planName]);
+
+  const calculateEndDate = () => {
+    const now = new Date();
+    const endDate = new Date(now);
+    endDate.setDate(endDate.getDate() + 30);
+    return endDate;
+  };
+
+  // Add debug logging function
+  const addDebugLog = (message: string) => {
+    console.log(message);
+    setDebugInfo(prev => `${prev}\n${message}`);
+  };
+
+  const createCheckoutSession = async () => {
+    try {
+      //addDebugLog('🔵 Starting checkout session creation...');
+      //addDebugLog(`Backend URL: ${BACKEND_URL}`);
+
+      // Test backend connectivity first
+      //addDebugLog('🔍 Testing backend connectivity...');
+      try {
+        const healthCheck = await fetch(`${BACKEND_URL}/health`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        const healthData = await healthCheck.json();
+        //addDebugLog(`✅ Backend is reachable: ${JSON.stringify(healthData)}`);
+      } catch (healthError) {
+        //addDebugLog(`❌ Backend health check failed: ${healthError.message}`);
+        throw new Error(`Backend server is not reachable at ${BACKEND_URL}. Please check if the server is running.`);
+      }
+
+      const requestBody = {
+        amount: parseFloat(amount as string),
+        currency: 'usd',
+        userId: user!.uid,
+        planId: planId as string,
+        planName: planName as string,
+        // Use backend URLs that will redirect back to the app
+        successUrl: `${BACKEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&userId=${user!.uid}`,
+        cancelUrl: `${BACKEND_URL}/payment-cancel?userId=${user!.uid}`,
+      };
+
+      //addDebugLog(`📤 Sending request to: ${BACKEND_URL}/create-checkout-session`);
+      //addDebugLog(`📤 Request body: ${JSON.stringify(requestBody, null, 2)}`);
+
+      const response = await fetch(`${BACKEND_URL}/create-checkout-session`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      //addDebugLog(`📥 Response status: ${response.status}`);
+      
+      const responseText = await response.text();
+      //addDebugLog(`📥 Response body: ${responseText.substring(0, 200)}...`);
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status} - ${responseText}`);
+      }
+
+      const data = JSON.parse(responseText);
+      //addDebugLog(`✅ Parsed data successfully`);
+      //addDebugLog(`✅ Checkout URL: ${data.url ? 'RECEIVED' : 'MISSING'}`);
+
+      if (!data.url) {
+        throw new Error('No checkout URL returned from server');
+      }
+
+      setCheckoutUrl(data.url);
+      setSessionId(data.id);
+      //addDebugLog(`✅ State updated with checkout URL`);
+
+      // On web, redirect directly to Stripe Checkout
+      if (isWeb && data.url) {
+        //addDebugLog('🌐 Redirecting web browser...');
+        window.location.href = data.url;
+      }
+      
+      setLoading(false);
+      //addDebugLog('✅ Loading complete');
+
+    } catch (error: any) {
+      //addDebugLog(`❌ ERROR: ${error.message}`);
+      console.error('❌ Full Checkout Error:', error);
+      
+      setLoading(false);
+      
       Alert.alert(
-        'Payment Successful! 🎉',
-        `You are now a premium member!\n\nPlan: ${planName}\nAmount: K${amount}`,
+        'Payment Error',
+        `Failed to initialize payment.\n\nError: ${error.message}\n\nBackend: ${BACKEND_URL}`,
         [
-          {
-            text: 'Continue',
-            onPress: () => {
-              router.replace('/(tabs)/profile');
-            }
-          }
+          { text: 'Retry', onPress: () => {
+            setLoading(true);
+            createCheckoutSession();
+          }},
+          { text: 'Cancel', onPress: () => router.back() },
         ]
       );
-    } catch (error) {
-      console.error('Payment error:', error);
-      Alert.alert('Payment Failed', 'An error occurred while processing your payment. Please try again.');
-    } finally {
-      setIsProcessing(false);
+    }
+  };
+
+  const handlePaymentSuccess = async (retrievedSessionId: string) => {
+    try {
+      //addDebugLog('✅ Processing payment success...');
+      const startDate = new Date();
+      const endDate = calculateEndDate();
+
+      await updateDoc(doc(db, 'users', user!.uid), {
+        isPremium: true,
+        premiumPlan: planId,
+        premiumStartDate: startDate,
+        premiumEndDate: endDate,
+        lastPaymentAmount: parseFloat(amount as string),
+        lastPaymentDate: startDate,
+        stripeSessionId: retrievedSessionId,
+        updatedAt: serverTimestamp(),
+      });
+
+      //addDebugLog('✅ User document updated');
+
+      Alert.alert(
+        'Payment Successful! 🎉',
+        `You are now a premium member!\n\nPlan: ${planName}\nAmount: K${amount}\nValid until: ${endDate.toLocaleDateString()}`,
+        [{ text: 'Continue', onPress: () => router.replace('/(tabs)/profile') }]
+      );
+    } catch (error: any) {
+      //addDebugLog(`❌ Subscription update error: ${error.message}`);
+      console.error('Subscription update error:', error);
+      Alert.alert('Error', 'Payment succeeded but account update failed. Please contact support.');
+    }
+  };
+
+  // Keep track of which page we've seen
+
+  const handleNavigationStateChange = async (navState: any) => {
+    const { url } = navState;
+    //addDebugLog(`🔗 Navigation: ${url}`);
+
+    // Check for success URL - capture session ID
+    if (url.includes('/payment-success') && !hasSeenSuccessRef.current) {
+      //addDebugLog('✅ Payment success page detected');
+      hasSeenSuccessRef.current = true;
+      
+      try {
+        // Extract session_id from URL
+        const urlObj = new URL(url);
+        const retrievedSessionId = urlObj.searchParams.get('session_id');
+
+        if (retrievedSessionId) {
+          //addDebugLog(`📝 Session ID captured: ${retrievedSessionId}`);
+          sessionIdRef.current = retrievedSessionId;
+        } else {
+          //addDebugLog('⚠️ No session ID found in success URL');
+        }
+      } catch (error) {
+        //addDebugLog(`❌ Error parsing success URL: ${error.message}`);
+      }
+      return;
+    }
+
+    // Check for cancel URL
+    if (url.includes('/payment-cancel') && !hasSeenCancelRef.current) {
+      //addDebugLog('⚠️ Payment cancel page detected');
+      hasSeenCancelRef.current = true;
+      return;
+    }
+
+    // Check if WebView redirected to about:blank (means success/cancel page finished)
+    if (url === 'about:blank') {
+      //addDebugLog('🔄 Detected redirect to about:blank');
+      
+      // If we saw success page and have session ID, process payment
+      if (hasSeenSuccessRef.current && sessionIdRef.current) {
+        //addDebugLog('✅ Processing payment success...');
+        await handlePaymentSuccess(sessionIdRef.current);
+      } 
+      // If we saw cancel page, show cancel alert
+      else if (hasSeenCancelRef.current) {
+        //addDebugLog('❌ Processing payment cancellation...');
+        Alert.alert('Payment Cancelled', 'No charges were made.', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      }
+      
+      return;
     }
   };
 
   const handleCancel = () => {
-    router.back();
+    Alert.alert('Cancel Payment?', 'Are you sure you want to cancel?', [
+      { text: 'No', style: 'cancel' },
+      { text: 'Yes', onPress: () => router.back() },
+    ]);
   };
 
+  // Show debug info in dev mode
+  const showDebugInfo = __DEV__;
+
+  // Show loading while initializing
+  if (!isInitialized) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading user information...</Text>
+          {showDebugInfo && (
+            <View style={styles.debugBox}>
+              <Text style={styles.debugText}>{debugInfo}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // For web, show loading while redirecting
+  if (isWeb) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Redirecting to secure checkout...</Text>
+          {showDebugInfo && (
+            <View style={styles.debugBox}>
+              <Text style={styles.debugText}>{debugInfo}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // For mobile, show WebView
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color="#333" />
+          <MaterialCommunityIcons name="close" size={28} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Payment</Text>
+        <Text style={styles.headerTitle}>Secure Payment</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Order Summary */}
+      {/* Summary */}
       <View style={styles.summaryCard}>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Plan</Text>
@@ -125,126 +358,72 @@ export default function PaymentGatewayScreen() {
           <Text style={styles.summaryLabel}>Amount</Text>
           <Text style={styles.summaryValue}>K{amount}</Text>
         </View>
-      </View>
-
-      {/* Payment Form */}
-      <View style={styles.formContainer}>
-        <Text style={styles.sectionTitle}>Card Details</Text>
-        
-        {/* Cardholder Name */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Cardholder Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="John Doe"
-            placeholderTextColor="#bbb"
-            value={cardholderName}
-            onChangeText={setCardholderName}
-            editable={!isProcessing}
-          />
-        </View>
-
-        {/* Card Number */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Card Number</Text>
-          <View style={styles.cardNumberContainer}>
-            <MaterialCommunityIcons name="credit-card" size={24} color="#666" />
-            <TextInput
-              style={styles.cardInput}
-              placeholder="1234 5678 9012 3456"
-              placeholderTextColor="#bbb"
-              value={cardNumber}
-              onChangeText={(text) => setCardNumber(formatCardNumber(text))}
-              keyboardType="numeric"
-              maxLength={19}
-              editable={!isProcessing}
-            />
-          </View>
-        </View>
-
-        {/* Expiry and CVV */}
-        <View style={styles.rowContainer}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
-            <Text style={styles.label}>Expiry Date</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="MM/YY"
-              placeholderTextColor="#bbb"
-              value={
-                expiryMonth && expiryYear
-                  ? `${expiryMonth}/${expiryYear}`
-                  : expiryMonth
-              }
-              onChangeText={(text) => {
-                const formatted = formatExpiry(text);
-                const parts = formatted.split('/');
-                if (parts[0]) setExpiryMonth(parts[0]);
-                if (parts[1]) setExpiryYear(parts[1]);
-              }}
-              keyboardType="numeric"
-              maxLength={5}
-              editable={!isProcessing}
-            />
-          </View>
-          
-          <View style={[styles.inputGroup, { flex: 1 }]}>
-            <Text style={styles.label}>CVV</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="123"
-              placeholderTextColor="#bbb"
-              value={cvv}
-              onChangeText={(text) => setCvv(text.replace(/\D/g, '').substring(0, 3))}
-              keyboardType="numeric"
-              maxLength={3}
-              secureTextEntry
-              editable={!isProcessing}
-            />
-          </View>
-        </View>
-
-        {/* Test Card Info */}
-        <View style={styles.infoBox}>
-          <MaterialCommunityIcons name="information" size={20} color="#1976D2" />
-          <View style={{ marginLeft: 10, flex: 1 }}>
-            <Text style={styles.infoTitle}>Test Card (Simulation)</Text>
-            <Text style={styles.infoText}>
-              Card: 4111 1111 1111 1111{'\n'}
-              Any future date, any 3-digit CVV
-            </Text>
-          </View>
+        <View style={styles.divider} />
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Duration</Text>
+          <Text style={styles.summaryValue}>30 Days</Text>
         </View>
       </View>
 
-      {/* Action Buttons */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={[styles.button, styles.cancelButton]}
-          onPress={handleCancel}
-          disabled={isProcessing}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.button, styles.payButton, isProcessing && styles.payButtonDisabled]}
-          onPress={handlePayment}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <Text style={styles.payButtonText}>Processing...</Text>
-          ) : (
-            <Text style={styles.payButtonText}>Pay K{amount}</Text>
+      {/* Debug Info (only in dev) */}
+      {showDebugInfo && (
+        <View style={styles.debugBox}>
+          <Text style={styles.debugTitle}>Debug Info:</Text>
+          <Text style={styles.debugText}>{debugInfo}</Text>
+        </View>
+      )}
+
+      {/* WebView / Loader */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Preparing secure checkout...</Text>
+        </View>
+      ) : checkoutUrl ? (
+        <WebView
+          ref={webviewRef}
+          source={{ uri: checkoutUrl }}
+          style={styles.webview}
+          onNavigationStateChange={handleNavigationStateChange}
+          startInLoadingState={true}
+          renderLoading={() => (
+            <View style={styles.webviewLoading}>
+              <ActivityIndicator size="large" color="#4CAF50" />
+            </View>
           )}
-        </TouchableOpacity>
-      </View>
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            //addDebugLog(`❌ WebView Error: ${nativeEvent.description}`);
+          }}
+          onLoad={() => addDebugLog('✅ WebView loaded')}
+          originWhitelist={['*']}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          mixedContentMode="always"
+        />
+      ) : (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>No checkout URL available</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => {
+              setLoading(true);
+              createCheckoutSession();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Footer */}
       <View style={styles.footer}>
         <MaterialCommunityIcons name="lock" size={16} color="#666" />
-        <Text style={styles.footerText}>Your payment information is secure and encrypted</Text>
+        <Text style={styles.footerText}>
+          Secured by Stripe • Your payment information is encrypted
+        </Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -261,6 +440,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+    backgroundColor: '#fff',
   },
   backButton: {
     width: 40,
@@ -274,7 +454,8 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   summaryCard: {
-    margin: 20,
+    marginHorizontal: 20,
+    marginVertical: 15,
     padding: 16,
     backgroundColor: '#f8f9fa',
     borderRadius: 12,
@@ -285,7 +466,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
   },
   summaryLabel: {
     fontSize: 14,
@@ -302,118 +482,81 @@ const styles = StyleSheet.create({
     backgroundColor: '#e0e0e0',
     marginVertical: 8,
   },
-  formContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 16,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#333',
-  },
-  cardNumberContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#fafafa',
-  },
-  cardInput: {
+  loadingContainer: {
     flex: 1,
-    marginLeft: 10,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#333',
-  },
-  rowContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  infoBox: {
-    flexDirection: 'row',
-    backgroundColor: '#E3F2FD',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1976D2',
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 13,
-    color: '#1565C0',
-    lineHeight: 18,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 20,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
   },
-  cancelButton: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  cancelButtonText: {
+  loadingText: {
+    marginTop: 16,
     fontSize: 16,
-    fontWeight: '600',
     color: '#666',
+    textAlign: 'center',
   },
-  payButton: {
-    backgroundColor: '#4CAF50',
+  webview: {
+    flex: 1,
   },
-  payButtonDisabled: {
-    backgroundColor: '#A5D6A7',
-  },
-  payButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
+  webviewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 15,
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 8,
+    backgroundColor: '#f8f9fa',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
   },
   footerText: {
     fontSize: 12,
     color: '#666',
     fontStyle: 'italic',
+    marginLeft: 8,
+    textAlign: 'center',
+  },
+  debugBox: {
+    margin: 10,
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    maxHeight: 150,
+  },
+  debugTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 5,
+    color: '#333',
+  },
+  debugText: {
+    fontSize: 10,
+    color: '#666',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#d32f2f',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

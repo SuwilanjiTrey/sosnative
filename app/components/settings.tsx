@@ -13,6 +13,7 @@ const SETTINGS_KEY = '@app_settings';
 export default function SettingsScreen() {
   const router = useRouter();
   const [locationEnabled, setLocationEnabled] = useState(false);
+  const [backgroundLocationEnabled, setBackgroundLocationEnabled] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [photoEnabled, setPhotoEnabled] = useState(false);
@@ -25,14 +26,16 @@ export default function SettingsScreen() {
   const loadPermissionStates = async () => {
     try {
       // Check actual permission statuses
-      const [locationStatus, cameraStatus, audioStatus, photoStatus] = await Promise.all([
+      const [locationStatus, backgroundStatus, cameraStatus, audioStatus, photoStatus] = await Promise.all([
         Location.getForegroundPermissionsAsync(),
+        Location.getBackgroundPermissionsAsync(),
         Camera.getCameraPermissionsAsync(),
         Audio.getPermissionsAsync(),
         MediaLibrary.getPermissionsAsync(),
       ]);
 
       setLocationEnabled(locationStatus.status === 'granted');
+      setBackgroundLocationEnabled(backgroundStatus.status === 'granted');
       setCameraEnabled(cameraStatus.status === 'granted');
       setAudioEnabled(audioStatus.status === 'granted');
       setPhotoEnabled(photoStatus.status === 'granted');
@@ -40,6 +43,7 @@ export default function SettingsScreen() {
       // Save current states
       await saveSettings({
         location: locationStatus.status === 'granted',
+        backgroundLocation: backgroundStatus.status === 'granted',
         camera: cameraStatus.status === 'granted',
         audio: audioStatus.status === 'granted',
         photo: photoStatus.status === 'granted',
@@ -86,6 +90,7 @@ export default function SettingsScreen() {
         setLocationEnabled(true);
         await saveSettings({
           location: true,
+          backgroundLocation: backgroundLocationEnabled,
           camera: cameraEnabled,
           audio: audioEnabled,
           photo: photoEnabled,
@@ -103,6 +108,51 @@ export default function SettingsScreen() {
       );
       await saveSettings({
         location: false,
+        backgroundLocation: backgroundLocationEnabled,
+        camera: cameraEnabled,
+        audio: audioEnabled,
+        photo: photoEnabled,
+      });
+    }
+  };
+
+  const handleBackgroundLocationToggle = async (value: boolean) => {
+    if (value) {
+      // Foreground is required for background
+      let fgStatus = await Location.getForegroundPermissionsAsync();
+      if (fgStatus.status !== 'granted') {
+        const fg = await Location.requestForegroundPermissionsAsync();
+        if (fg.status !== 'granted') {
+          setBackgroundLocationEnabled(false);
+          openAppSettings();
+          return;
+        }
+        setLocationEnabled(true);
+      }
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      if (status === 'granted') {
+        setBackgroundLocationEnabled(true);
+        await saveSettings({
+          location: locationEnabled,
+          backgroundLocation: true,
+          camera: cameraEnabled,
+          audio: audioEnabled,
+          photo: photoEnabled,
+        });
+      } else {
+        setBackgroundLocationEnabled(false);
+        openAppSettings();
+      }
+    } else {
+      setBackgroundLocationEnabled(false);
+      Alert.alert(
+        'Disable Background Location',
+        'To disable background location access, please go to your device settings',
+        [{ text: 'OK' }]
+      );
+      await saveSettings({
+        location: locationEnabled,
+        backgroundLocation: false,
         camera: cameraEnabled,
         audio: audioEnabled,
         photo: photoEnabled,
@@ -117,6 +167,7 @@ export default function SettingsScreen() {
         setCameraEnabled(true);
         await saveSettings({
           location: locationEnabled,
+          backgroundLocation: backgroundLocationEnabled,
           camera: true,
           audio: audioEnabled,
           photo: photoEnabled,
@@ -134,6 +185,7 @@ export default function SettingsScreen() {
       );
       await saveSettings({
         location: locationEnabled,
+        backgroundLocation: backgroundLocationEnabled,
         camera: false,
         audio: audioEnabled,
         photo: photoEnabled,
@@ -148,6 +200,7 @@ export default function SettingsScreen() {
         setAudioEnabled(true);
         await saveSettings({
           location: locationEnabled,
+          backgroundLocation: backgroundLocationEnabled,
           camera: cameraEnabled,
           audio: true,
           photo: photoEnabled,
@@ -165,6 +218,7 @@ export default function SettingsScreen() {
       );
       await saveSettings({
         location: locationEnabled,
+        backgroundLocation: backgroundLocationEnabled,
         camera: cameraEnabled,
         audio: false,
         photo: photoEnabled,
@@ -179,6 +233,7 @@ export default function SettingsScreen() {
         setPhotoEnabled(true);
         await saveSettings({
           location: locationEnabled,
+          backgroundLocation: backgroundLocationEnabled,
           camera: cameraEnabled,
           audio: audioEnabled,
           photo: true,
@@ -196,6 +251,7 @@ export default function SettingsScreen() {
       );
       await saveSettings({
         location: locationEnabled,
+        backgroundLocation: backgroundLocationEnabled,
         camera: cameraEnabled,
         audio: audioEnabled,
         photo: false,
@@ -235,9 +291,9 @@ export default function SettingsScreen() {
         {/* Location */}
         <View style={styles.settingItem}>
           <View style={styles.settingTextContainer}>
-            <Text style={styles.settingTitle}>Location</Text>
+            <Text style={styles.settingTitle}>Location (Foreground)</Text>
             <Text style={styles.settingDescription}>
-              Set the location so the app can track you
+              Allow the app to access your location while using the app
             </Text>
           </View>
           <Switch
@@ -245,6 +301,23 @@ export default function SettingsScreen() {
             onValueChange={handleLocationToggle}
             trackColor={{ false: '#E0E0E0', true: '#81C784' }}
             thumbColor={locationEnabled ? '#4CAF50' : '#f4f3f4'}
+            ios_backgroundColor="#E0E0E0"
+          />
+        </View>
+
+        {/* Background Location */}
+        <View style={styles.settingItem}>
+          <View style={styles.settingTextContainer}>
+            <Text style={styles.settingTitle}>Location (Background)</Text>
+            <Text style={styles.settingDescription}>
+              Allow the app to access your location in the background for emergency tracking
+            </Text>
+          </View>
+          <Switch
+            value={backgroundLocationEnabled}
+            onValueChange={handleBackgroundLocationToggle}
+            trackColor={{ false: '#E0E0E0', true: '#81C784' }}
+            thumbColor={backgroundLocationEnabled ? '#4CAF50' : '#f4f3f4'}
             ios_backgroundColor="#E0E0E0"
           />
         </View>
