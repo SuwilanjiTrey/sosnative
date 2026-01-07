@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SOS app",
+    "name": "SafeCircle",
     "slug": "SOS",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,26 +8,43 @@
     "scheme": "sosnative",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "sosapp",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "SafeCircle uses the camera during emergencies to capture photo or video evidence for responders.",
+        "NSLocationWhenInUseUsageDescription": "SafeCircle uses your location during emergencies to help responders and trusted contacts find you.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeCircle shares your location during an active emergency, even if the app is minimized or the screen is locked."
       }
     },
+
     "android": {
+      "package": "com.trey_chellah.SOS",
+
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE"
+      ],
+
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-fixed.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.trey_chellah.SOS"
+
+      "edgeToEdgeEnabled": true
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
@@ -39,11 +56,19 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "SafeCircle accesses your media only to attach photos or videos to emergency alerts."
+        }
+      ]
     ],
+
     "experiments": {
       "typedRoutes": true
     },
+
     "extra": {
       "router": {},
       "eas": {

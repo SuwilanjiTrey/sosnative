@@ -13,6 +13,7 @@ import {
   TextStyle,
   PanResponder,
   Dimensions,
+  Modal,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { getCurrentLocation } from '../utils/location';
@@ -20,7 +21,7 @@ import { sendSOSNotification } from '../utils/sosNotification';
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 // UUID helper
 function uuidv4() {
@@ -57,21 +58,40 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
   const [ripples, setRipples] = useState<Ripple[]>([]);
   const [emergencyContact, setEmergencyContact] = useState<EmergencyContact | null>(null);
   const [loading, setLoading] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const swipeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(800)).current;
+  const slideAnim = useRef(new Animated.Value(height)).current;
   const rippleId = useRef(0);
 
   // Fetch emergency contact on component mount
   useEffect(() => {
     fetchEmergencyContact();
+    // Get location on mount
+    fetchCurrentLocation();
   }, []);
+
+  const fetchCurrentLocation = async () => {
+    try {
+      console.log('[LOCATION] Fetching current location...');
+      const location = await getCurrentLocation();
+      if (location) {
+        console.log('[LOCATION] Location obtained:', location);
+        setCurrentLocation(location);
+      } else {
+        console.log('[LOCATION] No location available');
+      }
+    } catch (error) {
+      console.error('[LOCATION] Error getting location:', error);
+    }
+  };
 
   const fetchEmergencyContact = async () => {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) return;
 
+      console.log('[CONTACT] Fetching emergency contact...');
       // Get user's circles
       const circlesSnapshot = await getDocs(
         query(collection(db, "users", currentUser.uid, "circles"), where("status", "==", "accepted"))
@@ -88,16 +108,21 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
           ? nameParts[0][0] + nameParts[1][0] 
           : nameParts[0].substring(0, 2);
 
-        setEmergencyContact({
+        const contact = {
           id: contactDoc.id,
           name: contactData.name,
           phone: contactData.mobileNumber,
           relation: contactData.category,
           initials: initials.toUpperCase()
-        });
+        };
+
+        console.log('[CONTACT] Emergency contact set:', contact.name);
+        setEmergencyContact(contact);
+      } else {
+        console.log('[CONTACT] No emergency contacts found');
       }
     } catch (error) {
-      console.error("Error fetching emergency contact:", error);
+      console.error('[CONTACT] Error fetching emergency contact:', error);
     }
   };
 
@@ -122,7 +147,7 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
         useNativeDriver: true,
       }).start();
     } else {
-      slideAnim.setValue(800);
+      slideAnim.setValue(height);
     }
   }, [showEmergencyScreen]);
 
@@ -175,21 +200,24 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
 
   /** Trigger SOS - Show Emergency Screen */
   const triggerSOS = async () => {
+    console.log('[SOS] SOS button pressed - showing emergency screen');
+    
+    // Get fresh location when triggering
+    await fetchCurrentLocation();
+    
     setShowEmergencyScreen(true);
     setEmergencyTimer(10);
     Toast.show({ type: 'success', text1: 'Emergency Activated!' });
   };
 
-
-
-  /** Send SOS Alert (after timer expires) */
+  /** Send SOS Alert (after timer expires) - KEEPING YOUR WORKING LOGIC */
   const sendSOSAlert = async () => {
     if (loading) return;
     
     setLoading(true);
     try {
       const currentUser = auth.currentUser;
-      console.log("Current user in sendSOSAlert:", currentUser);
+      console.log("[SOS] Current user in sendSOSAlert:", currentUser);
       
       if (!currentUser) {
         throw new Error('User not authenticated');
@@ -199,7 +227,7 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
         throw new Error('User UID is missing');
       }
 
-      console.log("User UID:", currentUser.uid);
+      console.log("[SOS] User UID:", currentUser.uid);
 
       // Get user details
       const userDoc = await getDoc(doc(db, "users", currentUser.uid));
@@ -209,23 +237,25 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
 
       const userData = userDoc.data();
       const isPremium = userData.isPremium === true;
-      console.log("User data:", { name: userData.name, isPremium, plan: userData.premiumPlan });
+      console.log("[SOS] User data:", { name: userData.name, isPremium, plan: userData.premiumPlan });
       
-      // Get current location using your existing utility
+      // Get current location using your existing utility (FRESH FETCH)
+      console.log("[SOS] Getting fresh location...");
       const locationData = await getCurrentLocation();
-      console.log("Location data:", locationData);
+      console.log("[SOS] Location data:", locationData);
       
       if (!locationData) {
-        throw new Error('Could not get location');
+        console.warn('[SOS] Could not get location - proceeding without location');
       }
       
       // Convert to the format expected by sendSOSNotification
-      const location = {
+      // IMPORTANT: Add location as proper object field
+      const location = locationData ? {
         latitude: locationData.lat,
         longitude: locationData.lng
-      };
+      } : null;
       
-      console.log("Sending SOS with data:", {
+      console.log("[SOS] Sending SOS with data:", {
         userId: currentUser.uid,
         userName: userData.name,
         userPhone: userData.mobileNumber,
@@ -233,7 +263,7 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
         information: ''
       });
       
-      // Send SOS notification to circles and responders (if premium)
+      // YOUR WORKING sendSOSNotification function - DO NOT CHANGE
       await sendSOSNotification({
         userId: currentUser.uid,
         userName: userData.name,
@@ -242,6 +272,7 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
         information: '' // User didn't have time to specify, making it serious
       });
 
+      console.log("[SOS] SOS notification sent successfully!");
       setShowEmergencyScreen(false);
       
       // Show different messages based on user type
@@ -260,15 +291,17 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
       
       onSOSTriggered();
     } catch (error) {
-      console.error('Error sending SOS:', error);
-      
+      console.error('[SOS] Error sending SOS:', error);
+      Alert.alert('Error', 'Failed to send SOS alert. Please try again.');
       setShowEmergencyScreen(false);
     } finally {
       setLoading(false);
     }
   };
+
   /** Mark as Safe */
   const markAsSafe = () => {
+    console.log('[SOS] User marked as safe - canceling alert');
     setShowEmergencyScreen(false);
     setEmergencyTimer(10);
     Alert.alert('Marked as Safe', 'Emergency has been cancelled.');
@@ -278,7 +311,7 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
   /** Call Emergency Contact */
   const callEmergencyContact = () => {
     if (emergencyContact) {
-      // In a real app, you would use Linking to open the phone app
+      console.log('[CONTACT] Calling emergency contact:', emergencyContact.name);
       Alert.alert('Call Emergency Contact', `Would you like to call ${emergencyContact.name} at ${emergencyContact.phone}?`, [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -328,223 +361,232 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
     })
   ).current;
 
-  /** Emergency Screen */
-  if (showEmergencyScreen) {
-    return (
-      <View style={styles.emergencyOverlay as StyleProp<ViewStyle>}>
-        <Animated.View
-          style={[
-            styles.emergencyScreen as StyleProp<ViewStyle>,
-            {
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          {/* Handle bar */}
-          <View style={styles.handleBar as StyleProp<ViewStyle>} />
-
-          <View style={styles.emergencyHeader as StyleProp<ViewStyle>}>
-            <Text style={styles.emergencyTitle as StyleProp<TextStyle>}>
-              Emergency in Progress
-            </Text>
-          </View>
-
-          {/* SOS Button Visual */}
-          <View style={styles.emergencySOSContainer as StyleProp<ViewStyle>}>
-            {/* Animated ripple rings */}
-            <Animated.View
-              style={[
-                styles.rippleRing,
-                styles.rippleRing1,
-                {
-                  transform: [
-                    {
-                      scale: pulseAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 1.15],
-                      }),
-                    },
-                  ],
-                  opacity: pulseAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.3, 0],
-                  }),
-                },
-              ]}
-            />
-            <Animated.View
-              style={[
-                styles.rippleRing,
-                styles.rippleRing2,
-                {
-                  transform: [
-                    {
-                      scale: pulseAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 1.1],
-                      }),
-                    },
-                  ],
-                  opacity: pulseAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.2, 0],
-                  }),
-                },
-              ]}
-            />
-            <Animated.View
-              style={[
-                styles.rippleRing,
-                styles.rippleRing3,
-                {
-                  transform: [
-                    {
-                      scale: pulseAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 1.05],
-                      }),
-                    },
-                  ],
-                  opacity: pulseAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.15, 0],
-                  }),
-                },
-              ]}
-            />
-
-            <View style={styles.emergencySOSButton as StyleProp<ViewStyle>}>
-              <Text style={styles.emergencySOSText as StyleProp<TextStyle>}>SOS</Text>
-            </View>
-          </View>
-
-          {/* Timer Display */}
-          <View style={styles.timerContainer as StyleProp<ViewStyle>}>
-            <Text style={styles.timerLabel as StyleProp<TextStyle>}>
-              Sending alert in
-            </Text>
-            <View style={styles.timerBadge as StyleProp<ViewStyle>}>
-              <Text style={styles.timerNumber as StyleProp<TextStyle>}>
-                {emergencyTimer}
-              </Text>
-            </View>
-            <Text style={styles.timerLabel as StyleProp<TextStyle>}>seconds</Text>
-          </View>
-
-          {/* Emergency Contact Info */}
-          {emergencyContact && (
-            <View style={styles.contactCard as StyleProp<ViewStyle>}>
-              <View style={styles.contactHeader as StyleProp<ViewStyle>}>
-                <Text style={styles.contactHeaderText as StyleProp<TextStyle>}>
-                  Emergency Contact
-                </Text>
-              </View>
-              <View style={styles.contactBody as StyleProp<ViewStyle>}>
-                <View style={styles.contactInfo as StyleProp<ViewStyle>}>
-                  <View style={styles.avatar as StyleProp<ViewStyle>}>
-                    <Text style={styles.avatarText as StyleProp<TextStyle>}>
-                      {emergencyContact.initials}
-                    </Text>
-                  </View>
-                  <View style={styles.contactDetails as StyleProp<ViewStyle>}>
-                    <Text style={styles.contactName as StyleProp<TextStyle>}>
-                      {emergencyContact.name}
-                    </Text>
-                    <Text style={styles.contactPhone as StyleProp<TextStyle>}>
-                      {emergencyContact.phone}
-                    </Text>
-                    <Text style={styles.contactRelation as StyleProp<TextStyle>}>
-                      {emergencyContact.relation}
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity 
-                  style={styles.callButton as StyleProp<ViewStyle>}
-                  onPress={callEmergencyContact}
-                >
-                  <Text style={styles.callButtonText as StyleProp<TextStyle>}>📞</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* Swipe to Mark Safe */}
-          <View style={styles.swipeContainer as StyleProp<ViewStyle>}>
-            <View style={styles.swipeTrack as StyleProp<ViewStyle>}>
-              <Text style={styles.swipeText as StyleProp<TextStyle>}>
-                ←  SWIPE TO MARK YOURSELF AS SAFE
-              </Text>
-              <Animated.View
-                style={[
-                  styles.swipeHandle as StyleProp<ViewStyle>,
-                  {
-                    transform: [{ translateX: swipeAnim }],
-                  },
-                ]}
-                {...panResponder.panHandlers}
-              >
-                <Text style={styles.swipeHandleText as StyleProp<TextStyle>}>▶▶</Text>
-              </Animated.View>
-            </View>
-          </View>
-        </Animated.View>
-      </View>
-    );
-  }
-
-  /** Default SOS button with ripples */
   return (
-    <View style={styles.buttonContainer as StyleProp<ViewStyle>}>
-      {ripples.map((r) => (
+    <>
+      {/* Default SOS button with ripples */}
+      <View style={styles.buttonContainer as StyleProp<ViewStyle>}>
+        {ripples.map((r) => (
+          <Animated.View
+            key={r.id}
+            style={[
+              styles.ripple as StyleProp<ViewStyle>,
+              {
+                transform: [
+                  {
+                    scale: r.progress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 2.5],
+                    }),
+                  },
+                ],
+                opacity: r.progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.7, 0],
+                }),
+              },
+            ]}
+          />
+        ))}
+
         <Animated.View
-          key={r.id}
           style={[
-            styles.ripple as StyleProp<ViewStyle>,
+            styles.pulseRing as StyleProp<ViewStyle>,
             {
               transform: [
                 {
-                  scale: r.progress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.8, 2.5],
-                  }),
+                  scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }),
                 },
               ],
-              opacity: r.progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.7, 0],
-              }),
+              opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }),
             },
           ]}
         />
-      ))}
 
-      <Animated.View
-        style={[
-          styles.pulseRing as StyleProp<ViewStyle>,
-          {
-            transform: [
-              {
-                scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }),
-              },
-            ],
-            opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 0] }),
-          },
-        ]}
-      />
+        <TouchableOpacity
+          onPress={triggerSOS}
+          style={styles.button as StyleProp<ViewStyle>}
+          activeOpacity={0.7}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText as StyleProp<TextStyle>}>SOS</Text>
+        </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity
-        onPress={triggerSOS}
-        style={styles.button as StyleProp<ViewStyle>}
-        activeOpacity={0.7}
-        disabled={loading}
+      {/* Emergency Screen Modal - ENHANCED UI */}
+      <Modal
+        visible={showEmergencyScreen}
+        transparent={true}
+        animationType="none"
+        onRequestClose={markAsSafe}
       >
-        <Text style={styles.buttonText as StyleProp<TextStyle>}>SOS</Text>
-      </TouchableOpacity>
-    </View>
+        <View style={styles.emergencyOverlay as StyleProp<ViewStyle>}>
+          <Animated.View
+            style={[
+              styles.emergencyScreen as StyleProp<ViewStyle>,
+              {
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            {/* Handle bar */}
+            <View style={styles.handleBar as StyleProp<ViewStyle>} />
+
+            <View style={styles.emergencyHeader as StyleProp<ViewStyle>}>
+              <Text style={styles.emergencyTitle as StyleProp<TextStyle>}>
+                Emergency in Progress
+              </Text>
+              {currentLocation && (
+                <Text style={styles.locationIndicator as StyleProp<TextStyle>}>
+                  📍 Location: {currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)}
+                </Text>
+              )}
+            </View>
+
+            {/* SOS Button Visual */}
+            <View style={styles.emergencySOSContainer as StyleProp<ViewStyle>}>
+              {/* Animated ripple rings */}
+              <Animated.View
+                style={[
+                  styles.rippleRing,
+                  styles.rippleRing1,
+                  {
+                    transform: [
+                      {
+                        scale: pulseAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 1.15],
+                        }),
+                      },
+                    ],
+                    opacity: pulseAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.3, 0],
+                    }),
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.rippleRing,
+                  styles.rippleRing2,
+                  {
+                    transform: [
+                      {
+                        scale: pulseAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 1.1],
+                        }),
+                      },
+                    ],
+                    opacity: pulseAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.2, 0],
+                    }),
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.rippleRing,
+                  styles.rippleRing3,
+                  {
+                    transform: [
+                      {
+                        scale: pulseAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 1.05],
+                        }),
+                      },
+                    ],
+                    opacity: pulseAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.15, 0],
+                    }),
+                  },
+                ]}
+              />
+
+              <View style={styles.emergencySOSButton as StyleProp<ViewStyle>}>
+                <Text style={styles.emergencySOSText as StyleProp<TextStyle>}>SOS</Text>
+              </View>
+            </View>
+
+            {/* Timer Display */}
+            <View style={styles.timerContainer as StyleProp<ViewStyle>}>
+              <Text style={styles.timerLabel as StyleProp<TextStyle>}>
+                Sending alert in
+              </Text>
+              <View style={styles.timerBadge as StyleProp<ViewStyle>}>
+                <Text style={styles.timerNumber as StyleProp<TextStyle>}>
+                  {emergencyTimer}
+                </Text>
+              </View>
+              <Text style={styles.timerLabel as StyleProp<TextStyle>}>seconds</Text>
+            </View>
+
+            {/* Emergency Contact Info */}
+            {emergencyContact && (
+              <View style={styles.contactCard as StyleProp<ViewStyle>}>
+                <View style={styles.contactHeader as StyleProp<ViewStyle>}>
+                  <Text style={styles.contactHeaderText as StyleProp<TextStyle>}>
+                    Emergency Contact
+                  </Text>
+                </View>
+                <View style={styles.contactBody as StyleProp<ViewStyle>}>
+                  <View style={styles.contactInfo as StyleProp<ViewStyle>}>
+                    <View style={styles.avatar as StyleProp<ViewStyle>}>
+                      <Text style={styles.avatarText as StyleProp<TextStyle>}>
+                        {emergencyContact.initials}
+                      </Text>
+                    </View>
+                    <View style={styles.contactDetails as StyleProp<ViewStyle>}>
+                      <Text style={styles.contactName as StyleProp<TextStyle>}>
+                        {emergencyContact.name}
+                      </Text>
+                      <Text style={styles.contactPhone as StyleProp<TextStyle>}>
+                        {emergencyContact.phone}
+                      </Text>
+                      <Text style={styles.contactRelation as StyleProp<TextStyle>}>
+                        {emergencyContact.relation}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.callButton as StyleProp<ViewStyle>}
+                    onPress={callEmergencyContact}
+                  >
+                    <Text style={styles.callButtonText as StyleProp<TextStyle>}>📞</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Swipe to Mark Safe */}
+            <View style={styles.swipeContainer as StyleProp<ViewStyle>}>
+              <View style={styles.swipeTrack as StyleProp<ViewStyle>}>
+                <Text style={styles.swipeText as StyleProp<TextStyle>}>
+                  ←  SWIPE TO MARK YOURSELF AS SAFE
+                </Text>
+                <Animated.View
+                  style={[
+                    styles.swipeHandle as StyleProp<ViewStyle>,
+                    {
+                      transform: [{ translateX: swipeAnim }],
+                    },
+                  ]}
+                  {...panResponder.panHandlers}
+                >
+                  <Text style={styles.swipeHandleText as StyleProp<TextStyle>}>▶▶</Text>
+                </Animated.View>
+              </View>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
-// Keep all the existing styles unchanged
 const styles = StyleSheet.create({
   buttonContainer: {
     position: 'absolute',
@@ -590,43 +632,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.7)',
     zIndex: 0,
   },
-  countdownOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 999,
-  },
-  countdownText: {
-    fontSize: 64,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  cancelButton: {
-    marginTop: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#EF4444',
-    borderRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
   // Emergency Screen Styles
   emergencyOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    zIndex: 1000,
     justifyContent: 'flex-end',
   },
   emergencyScreen: {
@@ -655,6 +664,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111',
     letterSpacing: 0.3,
+  },
+  locationIndicator: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 8,
+    fontFamily: 'monospace',
   },
   emergencySOSContainer: {
     marginTop: 20,

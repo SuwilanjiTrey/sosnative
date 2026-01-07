@@ -1,15 +1,46 @@
 // app/components/premium.tsx
+import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
 import { StyledText } from '../../components/StyledText';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../../hooks/useAuth';
+import { db } from '../../firebaseConfig'
+import { doc, getDoc } from 'firebase/firestore';
+import React from 'react';
 
 export default function PremiumScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      const fetchUserData = async () => {
+        if (!user) return;
+        
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            setUserData(userDoc.data());
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+  
+      fetchUserData();
+    }, [user]);
+
+    //console.log("heres the users information: ", userData);
+
   const plans = [
     {
       id: 'monthly',
       name: 'Monthly Plan',
       price: 'K50',
+      amountUsd: 'K0.5',
       period: '/month',
       features: [
         'Live Location Tracking',
@@ -25,6 +56,7 @@ export default function PremiumScreen() {
       id: 'yearly',
       name: 'Yearly Plan',
       price: 'K500',
+      amountUsd: 'K0.5',
       period: '/year',
       features: [
         'All Monthly Features',
@@ -42,8 +74,9 @@ export default function PremiumScreen() {
     router.push({
       pathname: './PaymentGateway',
       params: {
+    
         planId: planId,
-        amount: planData?.price.replace('K', ''),
+        amount: planData?.amountUsd.replace('K', ''),
         planName: planData?.name
       }
     });

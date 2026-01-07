@@ -37,3 +37,15 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+firebaseConfig.ts
+
+# Functions
+functions/node_modules/
+functions/.env
