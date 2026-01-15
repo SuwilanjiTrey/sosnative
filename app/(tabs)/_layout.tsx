@@ -1,7 +1,7 @@
 // app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { auth } from '../../firebaseConfig';
+import { auth } from '@/firebaseConfig';
 import { useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context'; // <-- Import this
 

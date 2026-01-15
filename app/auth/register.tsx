@@ -66,6 +66,8 @@ export default function RegisterScreen() {
         errorMessage = "Please enter a valid email address.";
       } else if (error.code === 'auth/weak-password') {
         errorMessage = "Password is too weak. Please use at least 6 characters.";
+      } else if (error.code === 'auth/network-request-failed'){
+        errorMessage = "Network unstable, please make sure you a stable internet connection."
       }
 
       Alert.alert("Registration Failed", errorMessage);

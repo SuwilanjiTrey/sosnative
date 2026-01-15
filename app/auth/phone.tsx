@@ -1,19 +1,88 @@
 // app/auth/phone.tsx
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { StyledText } from '../../components/StyledText';
+import { db } from '../../firebaseConfig';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function PhoneScreen() {
   const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleContinue = () => {
+  const checkPhoneExists = async (phoneNumber: string): Promise<boolean> => {
+    try {
+      const formattedPhone = `+260${phoneNumber}`;
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('mobileNumber', '==', formattedPhone));
+      const querySnapshot = await getDocs(q);
+      
+      return !querySnapshot.empty;
+    } catch (error) {
+      console.error('Error checking phone number:', error);
+      throw error;
+    }
+  };
+
+  const handleContinue = async () => {
     if (!phone.trim()) {
       Alert.alert("Invalid", "Please enter your phone number");
       return;
     }
-    router.push({ pathname: '/auth/otp', params: { phone } });
+
+    // Remove all spaces and validate exactly 9 digits (since +260 is already provided)
+    const cleanPhone = phone.replace(/\s/g, '');
+    if (cleanPhone.length !== 9) {
+      Alert.alert(
+        "Invalid Phone Number", 
+        "Please enter exactly 9 digits. Zambian phone numbers are +260 followed by 9 digits."
+      );
+      return;
+    }
+
+    // Ensure all characters are digits
+    if (!/^\d{9}$/.test(cleanPhone)) {
+      Alert.alert("Invalid Phone Number", "Phone number must contain only digits");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Check if phone number already exists
+      const phoneExists = await checkPhoneExists(cleanPhone);
+      
+      if (phoneExists) {
+        Alert.alert(
+          "Phone Number Already in Use",
+          "This phone number is already registered. Please log in or use a different number.",
+          [
+            {
+              text: "Use Different Number",
+              style: "cancel"
+            },
+            {
+              text: "Go to Login",
+              onPress: () => router.replace('/auth/login')
+            }
+          ]
+        );
+        setLoading(false);
+        return;
+      }
+
+      // If phone doesn't exist, proceed to OTP verification
+      router.push({ pathname: '/auth/otp', params: { phone: cleanPhone } });
+    } catch (error) {
+      console.error('Error during phone check:', error);
+      Alert.alert(
+        "Error",
+        "Could not verify phone number. Please check your connection and try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -38,16 +107,24 @@ export default function PhoneScreen() {
             placeholder="965 502 028"
             value={phone}
             onChangeText={setPhone}
-            keyboardType="phone-pad"
+            keyboardType="phone-pad" 
             style={styles.phoneInput}
+            editable={!loading}
           />
         </View>
       </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleContinue}>
-        <Text style={styles.buttonText}>Continue</Text>
+ 
+      <TouchableOpacity 
+        style={[styles.button, loading && styles.buttonDisabled]} 
+        onPress={handleContinue}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Continue</Text>
+        )}
       </TouchableOpacity>
-
 
       <Text style={styles.terms}>
         By Continuing, you agree to our Terms & Conditions
@@ -120,6 +197,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
   },
   buttonText: {
     color: '#fff',

@@ -3,18 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-/*
-const firebaseConfig = {
-    apiKey: "AIzaSyBYMJVz1L9O5TY5LD_x1Tj4OX6gRZmAVq8",
-    authDomain: "th1ne-010.firebaseapp.com",
-    projectId: "th1ne-010",
-    storageBucket: "th1ne-010.firebasestorage.app",
-    messagingSenderId: "109865250582",
-    appId: "1:109865250582:web:7da316259557f973b32a37",
-    measurementId: "G-H6ESMPHLZK"
-  };
-
-*/
+//changes added to prevent deletion
 
 const firebaseConfig = {
   apiKey: "AIzaSyBAkOFer1aTaU2wHCR-lJfSAKfKfEm2Nrk",
@@ -25,9 +14,6 @@ const firebaseConfig = {
   appId: "1:915761650322:web:cb3ac3ea4835bf89aea44b",
   measurementId: "G-E00DNRMFDY"
 };
-
-
-
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);

@@ -192,7 +192,8 @@ export default function PaymentGatewayScreen() {
       
       Alert.alert(
         'Payment Error',
-        `Failed to initialize payment.\n\nError: ${error.message}\n\nBackend: ${BACKEND_URL}`,
+        //`Failed to initialize payment.\n\nError: ${error.message}\n\nBackend: ${BACKEND_URL}`,
+        `Failed to initiate payment.\nDont worry, its not your fault. Contact support to help resolve this issue`,
         [
           { text: 'Retry', onPress: () => {
             setLoading(true);

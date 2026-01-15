@@ -72,6 +72,8 @@ export default function LoginScreen() {
         errorMessage = "Incorrect password. Please try again.";
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = "Please enter a valid email address.";
+      } else if (error.code === 'auth/network-request-failed'){
+        errorMessage = "Network unstable, please make sure you a stable internet connection."
       }
 
       Alert.alert("Login Failed", errorMessage);

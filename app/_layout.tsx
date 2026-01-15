@@ -15,6 +15,8 @@ function AppContent() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth/login" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/phone" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/otp" options={{ headerShown: false }} />
       <Stack.Screen name="responder/dashboard" options={{ headerShown: false }} />
       <Stack.Screen name="responder/r-dashboard" options={{ headerShown: false }} />
       <Stack.Screen name="index" options={{ headerShown: false }} />
