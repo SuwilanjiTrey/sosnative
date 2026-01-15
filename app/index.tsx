@@ -91,7 +91,9 @@ const styles = StyleSheet.create({
     color: '#444',
   },
 });
-*/
+*/    
+
+
 
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, NativeModules, Platform, ScrollView, NativeEventEmitter } from 'react-native';
