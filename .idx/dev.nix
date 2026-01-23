@@ -4,7 +4,7 @@
   # Which nixpkgs channel to use.
   channel = "stable-25.05";
   # Use https://search.nixos.org/packages to find packages
-  packages = [ pkgs.nodejs_20 pkgs.imagemagick ];
+  packages = [ pkgs.nodejs_20 pkgs.imagemagick pkgs.openjdk17-bootstrap pkgs.gradle];
   # Sets environment variables in the workspace
   env = { EXPO_USE_FAST_RESOLVER = 1; };
   idx = {
