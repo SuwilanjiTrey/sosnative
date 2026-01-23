@@ -67,7 +67,7 @@ export default function PaymentGatewayScreen() {
     fetchUserData();
   }, [user]);
 
-  console.log("heres the users information: ", userData);
+  //console.log("heres the users information: ", userData);
 
   // Then, create checkout session only after user data is loaded
   useEffect(() => {

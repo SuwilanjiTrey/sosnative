@@ -41,7 +41,7 @@ export default function OTPScreen() {
       });
 
       console.log('Phone verified and saved successfully');
-      router.replace('/(tabs)/dashboard');
+      router.replace('/auth/location-setup');
     } catch (error: any) {
       console.error('Error verifying phone:', error);
       Alert.alert("Verification Failed", "Could not verify your phone number. Please try again.");

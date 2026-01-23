@@ -565,7 +565,7 @@ export default function SOSButton({ onSOSTriggered }: SOSButtonProps) {
             <View style={styles.swipeContainer as StyleProp<ViewStyle>}>
               <View style={styles.swipeTrack as StyleProp<ViewStyle>}>
                 <Text style={styles.swipeText as StyleProp<TextStyle>}>
-                  ←  SWIPE TO MARK YOURSELF AS SAFE
+                    SWIPE TO MARK YOURSELF AS SAFE
                 </Text>
                 <Animated.View
                   style={[
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'rgba(245, 142, 135, 0.3)',
     zIndex: 1,
   },
   pulseRing: {
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 4,
-    borderColor: 'rgba(255, 255, 255, 0.7)',
+    borderColor: 'rgba(250, 47, 32, 0.7)',
     zIndex: 0,
   },
   // Emergency Screen Styles

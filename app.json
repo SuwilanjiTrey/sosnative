@@ -1,14 +1,13 @@
 {
   "expo": {
     "name": "SafeCircle",
-    "slug": "SOS",
+    "slug": "safecircle-safety",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon-fixed.png",
     "scheme": "sosnative",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "sosapp",
@@ -19,10 +18,8 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeCircle shares your location during an active emergency, even if the app is minimized or the screen is locked."
       }
     },
-
     "android": {
       "package": "com.trey_chellah.SOS",
-
       "permissions": [
         "CAMERA",
         "ACCESS_FINE_LOCATION",
@@ -30,21 +27,17 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE"
       ],
-
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-fixed.png",
         "backgroundColor": "#ffffff"
       },
-
       "edgeToEdgeEnabled": true
     },
-
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -62,17 +55,18 @@
         {
           "photosPermission": "SafeCircle accesses your media only to attach photos or videos to emergency alerts."
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/messaging"
     ],
-
     "experiments": {
       "typedRoutes": true
     },
-
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f0ac54cb-3c3b-4318-bc61-a8bb95e5150a"
+        "projectId": "09e1580e-ac9c-4d87-9cee-1b51f0cd096f"
       }
     }
   }

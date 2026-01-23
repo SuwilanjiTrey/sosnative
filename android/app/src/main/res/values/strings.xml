@@ -3,4 +3,8 @@
   <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+<string name="widget_simple_description">SOS Emergency Widget</string>
+<string name="widget_advanced_description">SOS Emergency Widget with location and compass</string>
+    <string name="widget_location_loading">Loading location...</string>
+    <string name="widget_location_unavailable">Location unavailable</string>
 </resources>

@@ -123,12 +123,15 @@ export default function LoginScreen() {
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput
+                key={showPassword ? 'visible' : 'hidden'} // Forces re-render when toggled
                 placeholder="Enter your password"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
                 style={styles.passwordInput}
                 editable={!loading}
+                autoCapitalize="none"
+                autoCorrect={false}
               />
               <TouchableOpacity 
                 style={styles.eyeIcon}
@@ -189,8 +192,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: 20,
-    paddingTop: 60, // Space from top
-    paddingBottom: 40, // Space from bottom
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   logo: {
     width: 80,

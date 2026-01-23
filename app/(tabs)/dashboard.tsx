@@ -829,10 +829,10 @@ const generateMapHTML = () => {
           activeOpacity={0.7}
         >
           <View style={styles.locationIconContainer}>
-            <Ionicons name="navigate" size={20} color="#2196f3" />
+            <Ionicons name="locate" size={20} color="#2196f3" />
           </View>
           <View style={styles.locationTextContainer}>
-            <Text style={styles.locationText}>Current location: Lusaka</Text>
+            <Text style={styles.locationText}>Current location: {userData?.currentTown || 'null'}, { userData?.currentCity ||'Unknown' }</Text>
             <Text style={styles.locationSubtext}>Tap to view live location</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
@@ -1234,7 +1234,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   locationText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: '#333',
     marginBottom: 2,
@@ -1406,7 +1406,7 @@ scrollView: {
     marginTop: 20,
     alignItems: 'center',
     paddingVertical: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
     height:180,

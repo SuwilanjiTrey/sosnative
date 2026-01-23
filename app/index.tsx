@@ -1,9 +1,14 @@
-/*
-
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { auth } from '../firebaseConfig';
-import { View, Text, StyleSheet, Animated, NativeModules } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  NativeModules,
+  NativeEventEmitter,
+} from 'react-native';
 import React from 'react';
 
 const { ShakeModule } = NativeModules;
@@ -13,15 +18,35 @@ export default function Index() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const router = useRouter();
 
+  // 🔔 Native → JS bridge (widget + shake events)
   useEffect(() => {
-    // 🔥 Start native shake detection service
-    if (ShakeModule?.startService) {
-      ShakeModule.startService();
-    } else {
-      console.warn('ShakeModule not linked correctly');
+    if (!ShakeModule) {
+      console.warn('ShakeModule not available');
+      return;
     }
 
+    const emitter = new NativeEventEmitter(ShakeModule);
+
+    const sub = emitter.addListener('ShakeDetected', (event) => {
+      console.log('NATIVE:', event?.message);
+
+      if (event?.message?.includes('Widget clicked')) {
+        router.replace('/(tabs)/dashboard');
+      }
+    });
+
+    // Start native shake detection service
+    ShakeModule.startService();
+
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
+  // 🔐 Firebase auth listener
+  useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setIsAuthenticated(!!user);
       setIsLoading(false);
@@ -52,14 +77,8 @@ export default function Index() {
     return <Redirect href="/auth/login" />;
   }
 
-  // return <Redirect href="/(tabs)/dashboard"> redirect to dashboard
-  // ✅ Authenticated → show test screen (instead of redirecting for now)
-  return (
-    <View style={styles.testContainer}>
-      <Text style={styles.testText}>Welcome to SafeCircle 🚨</Text>
-      <Text style={styles.subText}>Shake your phone to test detection.</Text>
-    </View>
-  );
+  // ✅ Authenticated → go to dashboard
+  return <Redirect href="/(tabs)/dashboard" />;
 }
 
 const styles = StyleSheet.create({
@@ -91,89 +110,3 @@ const styles = StyleSheet.create({
     color: '#444',
   },
 });
-*/    
-
-
-
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, NativeModules, Platform, ScrollView, NativeEventEmitter } from 'react-native';
-
-const { ShakeModule } = NativeModules;
-
-export default function DebugIndex() {
-  const [logs, setLogs] = useState<string[]>([]);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [debugMessage, setDebugMessage] = useState('');
-
-
-  const addLog = (msg: string) => {
-    console.log(msg);
-    setLogs(prev => [msg, ...prev]); // newest on top
-  };
-
-  useEffect(() => {
-    addLog(`Platform: ${Platform.OS}`);
-    addLog(`NativeModules keys: ${Object.keys(NativeModules).join(', ')}`);
-
-    // Check if ShakeModule exists
-    if (ShakeModule?.startService) {
-      addLog("✅ ShakeModule is linked!");
-      try {
-        ShakeModule.startService();
-        addLog("✅ Shake service started successfully");
-      } catch (err) {
-        addLog(`❌ Error starting shake service: ${(err as any).message}`);
-      }
-    } else {
-      addLog("❌ ShakeModule not linked correctly");
-    }
-
-    // Fade in debug UI
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-
-  useEffect(() => {
-    const shakeEmitter = new NativeEventEmitter(ShakeModule);
-  
-    const subscription = shakeEmitter.addListener('ShakeDetected', (event: { message: any; }) => {
-      console.log('🔔 JS Event:', event.message);
-      setDebugMessage(event.message); // optional state to show in UI
-    });
-  
-    return () => subscription.remove();
-  }, []);
-  
-  return (
-    <View style={styles.container}>
-      <Animated.View style={{ opacity: fadeAnim, flex: 1 }}>
-        <Text style={styles.header}>SafeCircle Debug Dashboard</Text>
-        <Text style={{ marginTop: 10, color: 'blue' }}>
-          {debugMessage || 'Shake logs will appear here...'}
-        </Text>
-        <Text style={styles.subHeader}>Shake feature status:</Text>
-        <ScrollView style={styles.logContainer}>
-          {logs.map((log, idx) => (
-            <Text key={idx} style={styles.logText}>{log}</Text>
-          ))}
-        </ScrollView>
-      </Animated.View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-  header: { fontSize: 22, fontWeight: '700', color: '#d32f2f', marginBottom: 10 },
-  subHeader: { fontSize: 16, fontWeight: '500', marginBottom: 10 },
-  logContainer: { flex: 1, backgroundColor: '#f5f5f5', padding: 10, borderRadius: 8 },
-  logText: { fontSize: 14, fontFamily: 'monospace', marginBottom: 5 },
-});
-
-
-
-

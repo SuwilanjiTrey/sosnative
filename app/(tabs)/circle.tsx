@@ -27,6 +27,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 
+
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseService, CircleMember, CircleCategory, UserProfile } from '../auth/firebaseService'; // Import the service
 import { db } from '../../firebaseConfig';
@@ -241,7 +242,9 @@ useEffect(() => {
             onPress={() => setSelectedCategory(null)}
             style={styles.backButton}
           >
-            <Text style={styles.backIcon}>←</Text>
+            <Text style={styles.backIcon}>
+		<Ionicons name="arrow-back-sharp" size={20} color="black" />
+	    </Text>
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>{selectedCategory}</Text>
@@ -253,7 +256,9 @@ useEffect(() => {
         <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
           {members.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>👥</Text>
+              <Text style={styles.emptyIcon}>
+		<Ionicons name="people" size={30} color="#900" />
+		</Text>
               <Text style={styles.emptyTitle}>No members yet</Text>
               <Text style={styles.emptySubtitle}>Add members to this circle</Text>
             </View>
@@ -381,7 +386,9 @@ useEffect(() => {
           </View>
         ) : circles.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>👥</Text>
+            <Text style={styles.emptyIcon}>
+		<Ionicons name="people" size={30} color="#900" />
+		</Text>
             <Text style={styles.emptyTitle}>No circle members yet</Text>
             <Text style={styles.emptySubtitle}>Add your first member to get started</Text>
           </View>
@@ -711,7 +718,7 @@ async function testNotificationCreation() {
                   style={styles.phoneInput}
                   value={mobileNumber}
                   onChangeText={setMobileNumber}
-                  placeholder="0962380867"
+                  placeholder="09xxxxxxxx"
                   keyboardType="phone-pad"
                 />
                 <TouchableOpacity

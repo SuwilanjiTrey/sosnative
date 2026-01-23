@@ -5,7 +5,7 @@ import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { useProfile } from '../contexts/ProfileContext';
 import { db } from '../../firebaseConfig'
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore'; // Changed from getDoc
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,8 +15,7 @@ export default function ProfileScreen() {
   const { user } = useAuth();
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const { profilePicture } = useProfile();
-
+  const { profilePicture, updateProfilePicture } = useProfile();
 
   const handleSignOut = async () => {
     try {
@@ -27,29 +26,59 @@ export default function ProfileScreen() {
     }
   };
 
+  // Real-time listener for user data
   useEffect(() => {
-    const fetchUserData = async () => {
-      if (!user) return;
-      
-      try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          setUserData(userDoc.data());
+    if (!user) return;
+
+    console.log('Setting up real-time listener for user:', user.uid);
+
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', user.uid),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          console.log('User data updated from Firestore:', {
+            hasProfilePicture: !!data.profilePictureBase64,
+            name: data.name,
+            timestamp: data.updatedAt
+          });
+          
+          setUserData(data);
+          
+          // Also update the profile context if there's a new picture
+          if (data.profilePictureBase64) {
+            updateProfilePicture(data.profilePictureBase64);
+          }
         }
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-      } finally {
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error in real-time listener:', error);
         setLoading(false);
       }
-    };
+    );
 
-    fetchUserData();
+    // Cleanup listener on unmount
+    return () => {
+      console.log('Cleaning up real-time listener');
+      unsubscribe();
+    };
   }, [user]);
 
   const getImageSource = () => {
+    // Priority: userData from Firestore > profilePicture from context > user photoURL > default
     if (userData?.profilePictureBase64) {
+      console.log('Using profile picture from userData');
       return { uri: userData.profilePictureBase64 };
     }
+    
+    if (profilePicture && profilePicture.startsWith('data:image/')) {
+      console.log('Using profile picture from context');
+      return { uri: profilePicture };
+    }
+    
+    console.log('Using default profile picture');
     return { uri: user?.photoURL || 'https://i.pravatar.cc/150?img=10' };
   };
 
@@ -59,7 +88,6 @@ export default function ProfileScreen() {
     { id: 3, title: 'Privacy and Policy', icon: 'document-text-outline', route: '../components/privacy' },
     { id: 4, title: 'My Record', icon: 'videocam-outline', route: '../components/sosrecords' },
     { id: 5, title: 'Invite', icon: 'star-outline', route: '../components/invite' },
-    
   ];
 
   return (
@@ -75,14 +103,12 @@ export default function ProfileScreen() {
         
         <View style={styles.profileInfo}>
           <Text style={styles.userName}> {userData?.name || user?.displayName || 'User'} </Text>
-          <Text style={styles.joinDate}>Joined on 2023</Text>
+          <Text style={styles.joinDate}> Joined {userData?.createdAt || '2026'}</Text>
           <View style={styles.accountBadge}>
             <Ionicons name="shield-checkmark" size={16} color="#007AFF" />
             <Text style={styles.accountType}>
-              
-            {userData?.isPremium ? 'Premium user' : 'Basic Plan'}
-              
-              </Text>
+              {userData?.isPremium ? 'Premium user' : 'Basic Plan'}
+            </Text>
           </View>
         </View>
 
@@ -131,15 +157,18 @@ export default function ProfileScreen() {
           <View style={styles.subscriptionImage}>
             <Ionicons name="shield-checkmark" size={60} color="#FFB800" />
           </View>
-          
         </View>
+        
         <View style={styles.logoutButton}>
-        <TouchableOpacity 
-              style={styles.subscribeButton}
-              onPress={ () => handleSignOut()}
-            >
-              <Text style={styles.logoutText}>Logout</Text>
-            </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.subscribeButton}
+            onPress={() => handleSignOut()}
+          >
+            <Text style={styles.logoutText}>
+              <Ionicons name="log-out-outline" size={20} color="#d32f2f" />
+              Logout
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </ScrollView>
@@ -230,9 +259,11 @@ const styles = StyleSheet.create({
   logoutButton: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#ffebee',
+    backgroundColor: 'rgba(255,255,255,1)',
     borderRadius: 8,
     alignItems: 'center',
+    flexDirection: 'row',
+    flex: 1,
   },
   logoutText: {
     color: '#d32f2f',

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="8dp"
+    android:background="@drawable/widget_background">
+
+    <!-- Container for the entire widget -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="12dp">
+
+        <!-- SOS Button (Left side, larger) -->
+        <RelativeLayout
+            android:id="@+id/sos_button"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:background="@drawable/sos_button_background"
+            android:elevation="4dp">
+            
+            <!-- Shield icon -->
+            <ImageView
+                android:id="@+id/sos_icon"
+                android:layout_width="50dp"
+                android:layout_height="50dp"
+                android:layout_centerInParent="true"
+                android:src="@drawable/ic_shield"
+                android:contentDescription="SOS Button" />
+        </RelativeLayout>
+
+        <!-- Right side container -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/sos_button"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <!-- Current Location Section -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:padding="8dp"
+                android:background="@drawable/location_background">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="current location:"
+                    android:textSize="10sp"
+                    android:textColor="#666666"
+                    android:layout_marginEnd="4dp" />
+
+                <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:src="@drawable/ic_location"
+                    android:contentDescription="Location"
+                    android:layout_marginEnd="4dp" />
+
+                <TextView
+                    android:id="@+id/location_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Loading..."
+                    android:textSize="11sp"
+                    android:textColor="#333333"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
+
+            <!-- Compass Section -->
+            <RelativeLayout
+                android:id="@+id/compass_container"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/compass_background"
+                android:padding="8dp">
+
+                <!-- Compass needle/arrow -->
+                <ImageView
+                    android:id="@+id/compass_needle"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:src="@drawable/ic_compass_needle"
+                    android:contentDescription="Compass" />
+
+                <!-- North indicator -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="N"
+                    android:textSize="12sp"
+                    android:textColor="#22c55e"
+                    android:textStyle="bold"
+                    android:layout_centerHorizontal="true"
+                    android:layout_alignParentTop="true" />
+            </RelativeLayout>
+
+        </LinearLayout>
+
+    </RelativeLayout>
+
+</RelativeLayout>

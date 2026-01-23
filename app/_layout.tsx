@@ -19,7 +19,8 @@ function AppContent() {
       <Stack.Screen name="auth/otp" options={{ headerShown: false }} />
       <Stack.Screen name="responder/dashboard" options={{ headerShown: false }} />
       <Stack.Screen name="responder/r-dashboard" options={{ headerShown: false }} />
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/location-setup" options={{ headerShown: false }} /> 
+     <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="auth/register-responder" options={{ title: 'Register Responder' }} />
 
       {/* Profile related screens */}

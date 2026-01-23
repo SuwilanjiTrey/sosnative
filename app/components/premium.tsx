@@ -94,7 +94,7 @@ export default function PremiumScreen() {
       {/* Hero Image/Banner */}
       <View style={styles.hero}>
         <Image
-          source={{ uri: 'https://via.placeholder.com/400x200/ffebee/d32f2f?text=Premium+Safety' }}
+          source={require('../../assets/images/safe.png')}
           style={styles.heroImage}
         />
         <Text style={styles.heroText}>
@@ -174,14 +174,14 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     marginBottom: 40,
-    padding: 20,
-    backgroundColor: '#ffebee',
+    //padding: 20,
+    //backgroundColor: '#ffebee',
     borderRadius: 12,
   },
   heroImage: {
     width: '100%',
-    height: 150,
-    borderRadius: 8,
+    height: 82,
+    borderRadius: 3,
     marginBottom: 15,
   },
   heroText: {

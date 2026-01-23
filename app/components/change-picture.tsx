@@ -24,7 +24,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useProfile } from '../contexts/ProfileContext';
 import * as ImageManipulator from 'expo-image-manipulator';
 
-const { width } = Dimensions.get('window');
+
+const { width, height } = Dimensions.get('window');
 
 export default function ProfileManagementScreen() {
   const router = useRouter();
@@ -47,6 +48,7 @@ export default function ProfileManagementScreen() {
   const [tempName, setTempName] = useState('');
   const [tempMobile, setTempMobile] = useState('');
 
+
   useEffect(() => {
     loadUserData();
   }, []);
@@ -64,7 +66,7 @@ export default function ProfileManagementScreen() {
         setEmail(data.email || user.email || '');
         
         // Just use the data as-is from Firestore
-        const profilePic = data.profilePictureBase64 || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+        const profilePic = data.profilePictureBase64 || 'https://i.pravatar.cc/150?img=10';
         
         setProfilePicture(profilePic);
         updateProfilePicture(profilePic);
@@ -77,35 +79,50 @@ export default function ProfileManagementScreen() {
     }
   };
 
-  const convertImageToBase64 = async (uri: string): Promise<string> => {
-    try {
-      if (Platform.OS === 'web') {
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64data = reader.result as string;
-            // Return the FULL data URI with prefix for storage
-            resolve(base64data);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      } else {
-        // Mobile: Use FileSystem and add prefix
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        // Return WITH the data URI prefix
-        return `data:image/jpeg;base64,${base64}`;
+const convertImageToBase64 = async (uri: string): Promise<string> => {
+  try {
+    console.log('Converting image from URI:', uri);
+    
+    if (Platform.OS === 'web') {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64data = reader.result as string;
+          console.log('Web base64 length:', base64data.length);
+          resolve(base64data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } else {
+      // Mobile: Read the file
+      console.log('Reading mobile file...');
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      console.log('Mobile base64 length:', base64.length);
+      
+      // Detect image type from URI or default to jpeg
+      let mimeType = 'image/jpeg';
+      if (uri.toLowerCase().includes('.png')) {
+        mimeType = 'image/png';
+      } else if (uri.toLowerCase().includes('.jpg') || uri.toLowerCase().includes('.jpeg')) {
+        mimeType = 'image/jpeg';
       }
-    } catch (error) {
-      console.error('Error converting to base64:', error);
-      throw error;
+      
+      const dataUri = `data:${mimeType};base64,${base64}`;
+      console.log('Created data URI with type:', mimeType);
+      return dataUri;
     }
-  };
+  } catch (error) {
+    console.error('Error converting to base64:', error);
+    throw error;
+  }
+};
 
   const handleTakePhoto = async () => {
     setShowOptions(false);
@@ -117,7 +134,7 @@ export default function ProfileManagementScreen() {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: false, // We'll handle cropping ourselves
+      allowsEditing: true, // We'll handle cropping ourselves
       quality: 1,
     });
 
@@ -138,7 +155,7 @@ export default function ProfileManagementScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false, // We'll handle cropping ourselves
+      allowsEditing: true, // We'll handle cropping ourselves
       quality: 1,
     });
 
@@ -148,65 +165,96 @@ export default function ProfileManagementScreen() {
     }
   };
 
-  const handleCropAndUpload = async () => {
-    if (!selectedImage) return;
+const handleCropAndUpload = async () => {
+  if (!selectedImage) return;
 
-    try {
-      setLoading(true);
-      setShowCropModal(false);
+  try {
+    setLoading(true);
+    setShowCropModal(false);
 
-      // Crop and resize the image
-      const manipResult = await ImageManipulator.manipulateAsync(
-        selectedImage,
-        [
-          { resize: { width: 400 } }, // Resize to reasonable size
-        ],
-        { 
-          compress: 0.7, 
-          format: ImageManipulator.SaveFormat.JPEG 
-        }
-      );
+    console.log('Starting crop process...');
+    console.log('Selected image URI:', selectedImage);
 
-      await uploadProfilePicture(manipResult.uri);
-      setSelectedImage(null);
-    } catch (error) {
-      console.error('Error cropping image:', error);
-      Alert.alert('Error', 'Failed to process image');
-      setLoading(false);
-    }
-  };
-
-  const uploadProfilePicture = async (imageUri: string) => {
-    try {
-      setLoading(true);
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert('Error', 'No user logged in');
-        return;
+    // Crop and resize the image
+    const manipResult = await ImageManipulator.manipulateAsync(
+      selectedImage,
+      [
+        { resize: { width: 400 } }, // Resize to reasonable size
+      ],
+      { 
+        compress: 0.7, 
+        format: ImageManipulator.SaveFormat.JPEG 
       }
+    );
 
-      // Convert to base64 WITH the data URI prefix
-      const base64ImageWithPrefix = await convertImageToBase64(imageUri);
+    console.log('Image manipulated successfully');
+    console.log('Manipulated URI:', manipResult.uri);
+    console.log('Image dimensions:', manipResult.width, 'x', manipResult.height);
 
-      // Update Firestore with the FULL data URI (including prefix)
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        profilePictureBase64: base64ImageWithPrefix, // Store WITH prefix
-        updatedAt: new Date(),
-      });
+    await uploadProfilePicture(manipResult.uri);
+    setSelectedImage(null);
+  } catch (error: any) {
+    console.error('Error cropping image:', error);
+    console.error('Crop error details:', {
+      message: error.message,
+      selectedImage
+    });
+    Alert.alert('Error', `Failed to process image: ${error.message}`);
+    setLoading(false);
+  }
+};
 
-      // Update local state and context
-      setProfilePicture(base64ImageWithPrefix);
-      updateProfilePicture(base64ImageWithPrefix);
-      
-      Alert.alert('Success', 'Profile picture updated successfully!');
-    } catch (error) {
-      console.error('Error uploading profile picture:', error);
-      Alert.alert('Error', 'Failed to update profile picture');
-    } finally {
-      setLoading(false);
+const uploadProfilePicture = async (imageUri: string) => {
+  try {
+    setLoading(true);
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('Error', 'No user logged in');
+      return;
     }
-  };
+
+    console.log('Starting upload process...');
+    console.log('Original URI:', imageUri);
+
+    // Convert to base64 WITH the data URI prefix
+    const base64ImageWithPrefix = await convertImageToBase64(imageUri);
+    
+    console.log('Base64 conversion complete');
+    console.log('Data URI prefix:', base64ImageWithPrefix.substring(0, 50));
+
+    // Validate the base64 string
+    if (!base64ImageWithPrefix.startsWith('data:image/')) {
+      throw new Error('Invalid image format');
+    }
+
+    // Update Firestore with the FULL data URI (including prefix)
+    const userRef = doc(db, 'users', user.uid);
+    
+    console.log('Updating Firestore...');
+    await updateDoc(userRef, {
+      profilePictureBase64: base64ImageWithPrefix,
+      updatedAt: new Date(),
+    });
+
+    console.log('Firestore update complete');
+
+    // Update local state and context
+    setProfilePicture(base64ImageWithPrefix);
+    updateProfilePicture(base64ImageWithPrefix);
+    
+    Alert.alert('Success', 'Profile picture updated successfully!');
+  } catch (error: any) {
+    console.error('Error uploading profile picture:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    Alert.alert('Error', `Failed to update profile picture: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleRemoveProfilePicture = async () => {
     Alert.alert(
@@ -317,6 +365,14 @@ export default function ProfileManagementScreen() {
       ]
     );
   };
+
+const handleLocationUpdate = async () => {
+   try{
+	router.replace('/auth/location-setup');
+   } catch (error:any) {
+   console.error('Error loading page: ', error);
+}
+};
 
   const confirmDeleteAccount = async () => {
     try {
@@ -494,6 +550,18 @@ export default function ProfileManagementScreen() {
         <Text style={styles.fieldValue}>{email}</Text>
         <Text style={styles.fieldNote}>Email cannot be changed</Text>
       </View>
+
+      {/* Location Updates */}
+      <View style={styles.actionsSection}>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={handleLocationUpdate}
+        >
+          <Ionicons name="location-outline" size={24} color="#ff4444" />
+          <Text style={styles.deleteButtonText}> Update Location </Text>
+        </TouchableOpacity>
+      </View>
+
 
       {/* Account Actions */}
       <View style={styles.actionsSection}>
@@ -853,9 +921,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   cropModalContent: {
-    width: width - 40,
+    width: Math.min(width - 40, 400),
+    maxHeight: height * 0.85, // Limit to 85% of screen height
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
@@ -865,12 +935,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   imagePreviewContainer: {
-    width: width - 80,
-    height: width - 80,
-    borderRadius: (width - 80) / 2,
+    width: Math.min(width - 120, 280), // Smaller, responsive size
+    height: Math.min(width - 120, 280),
+    borderRadius: Math.min(width - 120, 280) / 2,
     overflow: 'hidden',
     marginBottom: 16,
     borderWidth: 3,
@@ -885,6 +955,7 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginBottom: 20,
+    paddingHorizontal: 10,
   },
   cropModalButtons: {
     flexDirection: 'row',

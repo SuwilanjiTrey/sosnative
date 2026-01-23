@@ -14,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.TextView
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -28,11 +29,15 @@ class ShakeService : Service(), SensorEventListener {
         const val EXTRA_MESSAGE = "message"
     }
 
+    private val shakeDetector = SmartShakeDetector()
+    private val readings = mutableListOf<SmartShakeDetector.ShakeReading>()
     private lateinit var sensorManager: SensorManager
     private var accel = 0f
     private var accelCurrent = 0f
     private var accelLast = 0f
     private var popupShown = false
+    private var lastTriggerTime: Long = 0
+    private val COOLDOWN_MS = 60 * 60 * 1000 // 1 hour
 
     private lateinit var windowManager: WindowManager
     private var overlayView: View? = null
@@ -50,7 +55,7 @@ class ShakeService : Service(), SensorEventListener {
         Log.d("ShakeService", "Service started")
         broadcastToModule("ShakeService started")
     }
-
+    
     override fun onSensorChanged(event: SensorEvent) {
         val x = event.values[0]
         val y = event.values[1]
@@ -61,11 +66,55 @@ class ShakeService : Service(), SensorEventListener {
         val delta = accelCurrent - accelLast
         accel = accel * 0.9f + delta
 
-        if (accel > 12 && !popupShown) {
-            Log.d("ShakeService", "Shake detected")
-            broadcastToModule("Shake detected")
-            showShakePopup()
+        // Store reading for pattern analysis
+        readings.add(SmartShakeDetector.ShakeReading(
+            timestamp = System.currentTimeMillis(),
+            acceleration = accel,
+            x = x, y = y, z = z
+        ))
+        
+        // Keep only recent history
+        if (readings.size > 50) {
+            readings.removeAt(0)
         }
+
+        // First check: is there significant movement?
+        if (accel > 12f && !popupShown) {
+            // Second check: analyze the pattern
+            val likelihood = shakeDetector.analyzeShakePattern(readings)
+            
+            when (likelihood) {
+                SmartShakeDetector.EmergencyLikelihood.HIGH -> {
+                    // Definitely looks like an emergency
+                    checkCooldownAndTrigger("High confidence emergency detected")
+                }
+                SmartShakeDetector.EmergencyLikelihood.MEDIUM -> {
+                    // Maybe an emergency - you could show a less intrusive notification
+                    // or require user confirmation
+                    Log.d("ShakeService", "Possible emergency detected")
+                    broadcastToModule("Possible emergency - monitoring")
+                }
+                SmartShakeDetector.EmergencyLikelihood.UNLIKELY -> {
+                    // Probably just normal activity
+                    Log.d("ShakeService", "Normal activity detected, ignoring")
+                }
+            }
+        }
+    }
+    
+    private fun checkCooldownAndTrigger(message: String) {
+        val now = System.currentTimeMillis()
+        
+        if (now - lastTriggerTime < COOLDOWN_MS) {
+            Log.d("ShakeService", "Shake ignored (cooldown active)")
+            broadcastToModule("Shake ignored: cooldown active")
+            return
+        }
+        
+        lastTriggerTime = now
+        Log.d("ShakeService", message)
+        broadcastToModule(message)
+        showShakePopup()
     }
 
     private fun showShakePopup() {
@@ -83,7 +132,15 @@ class ShakeService : Service(), SensorEventListener {
         }
 
         val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        overlayView = inflater.inflate(R.layout.shake_popup, null)
+        overlayView = inflater.inflate(R.layout.shake_widget, null)
+
+        overlayView?.findViewById<TextView>(R.id.btnOpenApp)?.setOnClickListener {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            startActivity(launchIntent)
+            broadcastToModule("Widget clicked → Opening app")
+            removeOverlay()
+        }
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -172,4 +229,103 @@ class ShakeService : Service(), SensorEventListener {
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     override fun onBind(intent: Intent?): IBinder? = null
+}
+
+class SmartShakeDetector {
+    data class ShakeReading(
+        val timestamp: Long,
+        val acceleration: Float,
+        val x: Float,
+        val y: Float,
+        val z: Float
+    )
+    
+    fun analyzeShakePattern(readings: List<ShakeReading>): EmergencyLikelihood {
+        if (readings.size < 10) return EmergencyLikelihood.UNLIKELY
+        
+        val isPersistent = checkPersistence(readings)
+        val isErratic = checkErraticPattern(readings)
+        val hasHighPeaks = checkPeakIntensity(readings)
+        val hasLowFrequency = checkFrequency(readings)
+        
+        val score = calculateEmergencyScore(
+            isPersistent, isErratic, hasHighPeaks, hasLowFrequency
+        )
+        
+        return when {
+            score > 0.7 -> EmergencyLikelihood.HIGH
+            score > 0.4 -> EmergencyLikelihood.MEDIUM
+            else -> EmergencyLikelihood.UNLIKELY
+        }
+    }
+    
+    private fun checkPersistence(readings: List<ShakeReading>): Boolean {
+        val threshold = 15f
+        val sustainedCount = readings.count { it.acceleration > threshold }
+        return sustainedCount > readings.size * 0.4
+    }
+    
+    private fun checkErraticPattern(readings: List<ShakeReading>): Boolean {
+        val peaks = findPeaks(readings)
+        if (peaks.size < 3) return false
+        
+        val intervals = mutableListOf<Long>()
+        for (i in 1 until peaks.size) {
+            intervals.add(peaks[i].timestamp - peaks[i-1].timestamp)
+        }
+        
+        val variance = calculateVariance(intervals)
+        return variance > 100
+    }
+    
+    private fun checkPeakIntensity(readings: List<ShakeReading>): Boolean {
+        val maxAccel = readings.maxOfOrNull { it.acceleration } ?: 0f
+        return maxAccel > 25f
+    }
+    
+    private fun checkFrequency(readings: List<ShakeReading>): Boolean {
+        val peaks = findPeaks(readings)
+        if (peaks.size < 2) return false
+        
+        val timeSpan = peaks.last().timestamp - peaks.first().timestamp
+        val frequency = (peaks.size - 1) * 1000f / timeSpan
+        
+        return frequency < 0.5f || frequency > 4f
+    }
+    
+    private fun findPeaks(readings: List<ShakeReading>): List<ShakeReading> {
+        val peaks = mutableListOf<ShakeReading>()
+        for (i in 1 until readings.size - 1) {
+            if (readings[i].acceleration > readings[i-1].acceleration &&
+                readings[i].acceleration > readings[i+1].acceleration &&
+                readings[i].acceleration > 12f) {
+                peaks.add(readings[i])
+            }
+        }
+        return peaks
+    }
+    
+    private fun calculateVariance(values: List<Long>): Double {
+        if (values.isEmpty()) return 0.0
+        val mean = values.average()
+        return values.map { (it - mean) * (it - mean) }.average()
+    }
+    
+    private fun calculateEmergencyScore(
+        persistent: Boolean,
+        erratic: Boolean,
+        highPeaks: Boolean,
+        lowFreq: Boolean
+    ): Float {
+        var score = 0f
+        if (persistent) score += 0.3f
+        if (erratic) score += 0.3f
+        if (highPeaks) score += 0.25f
+        if (lowFreq) score += 0.15f
+        return score
+    }
+    
+    enum class EmergencyLikelihood {
+        UNLIKELY, MEDIUM, HIGH
+    }
 }
